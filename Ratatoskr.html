@@ -1,0 +1,1401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Ratatoskr — check SPF, DKIM and DMARC, pull DNS records, detect proxies and measure speed for any domain.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🐿️%3C/text%3E%3C/svg%3E">
+<title>Ratatoskr — DNS Inspector</title>
+<style>
+:root{
+  --bg:#f5f6f8;--panel:#fff;--panel2:#f0f2f5;--ink:#16191f;--muted:#5d6675;--line:#dde1e7;
+  --accent:#1f5eff;--accent-ink:#fff;--pass:#12805c;--pass-bg:#e3f5ee;--warn:#a86200;--warn-bg:#fdf1dc;
+  --fail:#c2262e;--fail-bg:#fbe5e6;--info:#2f5d9e;--info-bg:#e6eef9;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+:root[data-theme="dark"]{
+  --bg:#0f1217;--panel:#171b22;--panel2:#1e232c;--ink:#e6e9ef;--muted:#99a2b2;--line:#2a303b;
+  --accent:#5b8cff;--accent-ink:#0b0e13;--pass:#4cc995;--pass-bg:#11322a;--warn:#f1b24a;--warn-bg:#3a2b10;
+  --fail:#ff6b72;--fail-bg:#3d171b;--info:#7fb0ff;--info-bg:#16263f;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:14px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5}
+.brand{font-weight:800;letter-spacing:.08em}
+.brand small{display:block;font-weight:500;letter-spacing:0;color:var(--muted);font-size:12px}
+header .sp{flex:1}
+main{max-width:1280px;margin:0 auto;padding:18px 22px 60px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+h2{font-size:16px;margin:0 0 10px}
+h3{font-size:14px;margin:18px 0 8px}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+textarea,input[type=text],select{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font:inherit}
+textarea{font-family:var(--mono);min-height:62px;resize:vertical}
+.grid{display:grid;gap:12px}
+.g-in{grid-template-columns:2fr 1.4fr 1fr}
+@media(max-width:860px){.g-in{grid-template-columns:1fr}}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.chk{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--ink);margin:0}
+button{font:inherit;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:7px;padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;padding:8px 18px}
+button.sm{padding:3px 8px;font-size:12px}
+button:disabled{opacity:.5;cursor:default}
+.status{color:var(--muted);font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+tr.click{cursor:pointer} tr.click:hover td{background:var(--panel2)} tr.sel td{background:var(--info-bg)}
+.mono,code{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.pass{color:var(--pass);background:var(--pass-bg)} .warn{color:var(--warn);background:var(--warn-bg)}
+.fail{color:var(--fail);background:var(--fail-bg)} .info{color:var(--info);background:var(--info-bg)}
+.muted{color:var(--muted)}
+.dhead{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.gradebox{width:64px;height:64px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800}
+.dhead h2{font-size:20px;margin:0}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:16px 0 14px;flex-wrap:wrap}
+.tabs button{border:none;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;color:var(--muted)}
+.tabs button.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+.find{display:grid;grid-template-columns:78px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.find:last-child{border-bottom:none}
+.find .t{font-weight:600}
+.find .fix{margin-top:4px;font-size:13px}
+.find .fix b{color:var(--accent)}
+.rec{background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:8px 10px;margin:6px 0;display:flex;gap:10px;align-items:flex-start}
+.rec .mono{flex:1}
+.tree{list-style:none;padding-left:18px;margin:4px 0;border-left:1px dashed var(--line)}
+.tree.root{padding-left:0;border-left:none}
+.node{margin:6px 0}
+.node .nh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.term{display:inline-block;font-family:var(--mono);font-size:12px;padding:1px 6px;border-radius:4px;margin:2px 2px 0 0;background:var(--panel2);border:1px solid var(--line)}
+.term.lk{border-color:var(--accent)} .term.bad{border-color:var(--fail);color:var(--fail)} .term.q-{color:var(--pass)} .term.qp{color:var(--fail)}
+.kv{display:grid;grid-template-columns:160px 1fr;gap:4px 12px;font-size:13px}
+.kv div:nth-child(odd){color:var(--muted)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px} @media(max-width:860px){.two{grid-template-columns:1fr}}
+.bar{height:8px;border-radius:4px;background:var(--panel2);overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:var(--accent)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+.toast.on{opacity:1}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+.note{font-size:12px;color:var(--muted);margin-top:6px}
+details summary{cursor:pointer;color:var(--muted);font-size:13px}
+/* App footer, update bar, about */
+.appfoot{max-width:1280px;margin:0 auto;padding:14px 22px 28px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);display:grid;gap:6px}
+.appfoot a{color:var(--accent)} .appfoot .row{gap:14px}
+#updBar{display:none;gap:10px;align-items:center;padding:8px 22px;background:var(--pass-bg);color:var(--ink);font-size:13px;border-bottom:1px solid var(--line)}
+#updBar .sp{flex:1} #updBar a.btnlink{background:var(--accent);color:var(--accent-ink);padding:4px 10px;border-radius:6px;text-decoration:none;font-size:12px;font-weight:600}
+/* Explain mode */
+body.explain [data-x]{text-decoration:underline dotted var(--accent);text-underline-offset:3px;cursor:help}
+body.explain .pill[data-x],body.explain .term[data-x]{outline:1px dotted var(--accent);outline-offset:1px;text-decoration:none}
+#xtip{position:fixed;z-index:40;max-width:340px;background:var(--panel);color:var(--ink);border:1px solid var(--accent);border-radius:9px;padding:10px 12px;font-size:12.5px;line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.25);display:none;pointer-events:none}
+#xtip b{display:block;font-size:13px;margin-bottom:3px}
+#xtip .g{margin-top:6px;color:var(--pass)} #xtip .w{margin-top:4px;color:var(--muted)}
+#xBtn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+#xBanner{display:none;background:var(--info-bg);color:var(--info);padding:7px 22px;font-size:13px;border-bottom:1px solid var(--line)}
+body.explain #xBanner{display:block}
+@media print{#xtip,#xBanner{display:none!important}header,.card.input,.tabs,.noprint{display:none!important} .tabpane{display:block!important} body{background:#fff}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand" style="display:flex;align-items:center;gap:10px"><span aria-hidden="true" style="font-size:22px;width:34px;height:34px;border-radius:9px;background:var(--info-bg);display:flex;align-items:center;justify-content:center">🐿️</span><div>RATATOSKR<small>Mail &amp; DNS Inspector</small></div></div>
+  <div class="sp"></div>
+  <button id="xBtn" class="sm" title="Hover anything underlined for a plain-English explanation">? Explain: off</button>
+  <button id="themeBtn" class="sm" title="Toggle theme">◐ Theme</button>
+</header>
+<div id="updBar"></div>
+<div id="xBanner">Explain mode is on: hover (or tap) anything with a dotted underline or outline for what it means and why it matters.</div>
+<div id="xtip"></div>
+<main>
+  <div class="card input">
+    <div class="grid g-in">
+      <div>
+        <label for="domains">Domain(s) — one per line or comma-separated</label>
+        <textarea id="domains" placeholder="example.com&#10;client2.org"></textarea>
+      </div>
+      <div>
+        <label for="selectors">Extra DKIM selectors (optional, comma-separated)</label>
+        <input type="text" id="selectors" placeholder="e.g. s1024, hs1-12345, mycrm">
+        <div class="note">~50 common selectors are probed automatically. DKIM selectors can't be listed via DNS — get exact ones from a message header (<code>DKIM-Signature: s=</code>).</div>
+      </div>
+      <div>
+        <label for="resolver">Resolver (DNS-over-HTTPS)</label>
+        <select id="resolver">
+          <option value="google">Google (dns.google)</option>
+          <option value="cloudflare">Cloudflare (1.1.1.1)</option>
+        </select>
+        <div style="margin-top:8px" class="grid">
+          <label class="chk"><input type="checkbox" id="optSub" checked> Subdomain sweep &amp; origin exposure</label>
+          <label class="chk"><input type="checkbox" id="optRdap" checked> Registrar / expiry (RDAP)</label>
+          <label class="chk"><input type="checkbox" id="optSpeed" checked> Connection timing (HTTPS)</label>
+        </div>
+      </div>
+    </div>
+    <details id="pgBox" style="margin-top:12px">
+      <summary><b style="color:var(--ink)">Privacy guard</b> — control which IPs / hosts may be sent to outside services <span id="pgSum" class="muted"></span></summary>
+      <div class="grid g-in" style="margin-top:10px">
+        <div>
+          <label for="pgList">Blocklist — IPs, CIDR ranges or hostnames that are never sent to Globalping, DNS resolvers, RDAP, or probed by this browser</label>
+          <textarea id="pgList" style="min-height:90px" placeholder="203.0.113.10&#10;198.51.100.0/24&#10;2001:db8::/32&#10;internal.client.com"></textarea>
+          <div class="note">A hostname also blocks its subdomains. Blocked items are skipped and listed in Findings and the Query log.</div>
+        </div>
+        <div class="grid" style="align-content:start">
+          <label class="chk"><input type="checkbox" id="pgPrivate" checked disabled> Always block private / reserved ranges (10/8, 172.16/12, 192.168/16, 100.64/10, loopback, link-local, fc00::/7…)</label>
+          <label class="chk"><input type="checkbox" id="pgNoIpGp" checked> Never send raw IP addresses to Globalping (hostnames only)</label>
+          <label class="chk"><input type="checkbox" id="pgNoPtr"> Skip reverse (PTR) lookups entirely</label>
+        </div>
+        <div class="note" id="pgCount"></div>
+      </div>
+    </details>
+    <details id="gpBox" style="margin-top:12px">
+      <summary><b style="color:var(--ink)">Regional tests (Globalping)</b> — ping &amp; HTTPS from probes in other regions, no VPN needed <span id="gpSum" class="muted"></span></summary>
+      <div class="grid g-in" style="margin-top:10px">
+        <div>
+          <label for="gpLocs">Default test locations — one per line (country, US state, city, continent, cloud region, ASN)</label>
+          <textarea id="gpLocs" style="min-height:110px"></textarea>
+          <div class="note">Examples: <code>US+Tennessee</code> · <code>US+Virginia</code> · <code>Dallas</code> · <code>Germany</code> · <code>EU</code> · <code>aws-us-east-1</code> · <code>AS7922</code> (Comcast)</div>
+        </div>
+        <div>
+          <label for="gpExtra">Extra targets to ping (e.g. a client office's public IP / firewall WAN)</label>
+          <textarea id="gpExtra" placeholder="203.0.113.10&#10;vpn.client.com" style="min-height:62px"></textarea>
+          <label for="gpToken" style="margin-top:8px">Globalping API token (optional — higher limits)</label>
+          <input type="text" id="gpToken" placeholder="Leave blank for anonymous use" autocomplete="off">
+          <div class="note">The token is saved in this browser only. Anonymous use has an hourly test limit; each location × test type counts as one test.</div>
+        </div>
+        <div class="grid" style="align-content:start">
+          <label class="chk"><input type="checkbox" id="gpOn"> Run on every check (batch default)</label>
+          <label class="chk"><input type="checkbox" id="gpPing" checked> Ping (ICMP, 4 packets)</label>
+          <label class="chk"><input type="checkbox" id="gpHttp" checked> HTTPS timing (DNS/TCP/TLS/TTFB)</label>
+          <div><label for="gpLimit">Probes per location</label><select id="gpLimit"><option>1</option><option>2</option><option>3</option></select></div>
+          <div class="note" id="gpCost"></div>
+        </div>
+      </div>
+    </details>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="runBtn">Run checks</button>
+      <button id="resetBtn" title="Clear inputs and results">Clear / reset</button>
+      <span class="status" id="status">Queries go straight from this browser to the selected DoH resolver.</span>
+    </div>
+  </div>
+
+  <div id="summary"></div>
+  <div id="detail"><div class="card empty">Enter a domain and run checks.</div></div>
+</main>
+<footer class="appfoot" id="appFoot"></footer>
+<div id="aboutModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:30;align-items:center;justify-content:center">
+  <div class="card" style="max-width:560px;margin:0 16px;max-height:85vh;overflow:auto" id="aboutBody"></div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:30;align-items:center;justify-content:center">
+  <div class="card" style="max-width:420px;margin:0">
+    <h2>Clear / reset</h2>
+    <label class="chk" style="margin:8px 0"><input type="checkbox" id="rsInputs" checked> Domains, selectors &amp; options</label>
+    <label class="chk" style="margin:8px 0"><input type="checkbox" id="rsResults" checked> Current results</label>
+    <label class="chk" style="margin:8px 0"><input type="checkbox" id="rsHistory"> Saved speed history (browser + regional)</label>
+    <label class="chk" style="margin:8px 0"><input type="checkbox" id="rsGp"> Regional test settings (locations, token)</label>
+    <label class="chk" style="margin:8px 0"><input type="checkbox" id="rsPg"> Privacy guard blocklist</label>
+    <div class="row" style="justify-content:flex-end;margin-top:12px"><button id="rsCancel">Cancel</button><button class="primary" id="rsGo">Clear</button></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================== App info ============================== */
+const RATATOSKR={name:'Ratatoskr — DNS Inspector',version:'1.0.0',released:'2026-11-03',author:'Triston Hughes',year:'2026',
+  linkedin:'https://www.linkedin.com/in/triston-hughes-949420242/',portfolio:'https://triston-hughes.vercel.app/',
+  repo:'https://github.com/CAITOUS/Ratatoskr-DNS-Inspector',
+  /* Raw URL of ratatoskr.json in the repo you publish from. Set to '' to turn update checks off. */
+  manifestUrl:'https://raw.githubusercontent.com/CAITOUS/Ratatoskr-DNS-Inspector/main/ratatoskr.json'};
+const NOTICE=`© ${RATATOSKR.year} ${RATATOSKR.author}. All rights reserved. Ratatoskr is the intellectual property of ${RATATOSKR.author}, provided for personal, educational, and internal organizational use. Not for resale, sublicensing, or distribution by value-added resellers (VARs). Results and reports you create with Ratatoskr belong to you.`;
+const LOCAL = location.protocol==='file:';
+
+/* ============================== Utilities ============================== */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const TYPES = {A:1,NS:2,CNAME:5,SOA:6,PTR:12,MX:15,TXT:16,AAAA:28,SRV:33,DS:43,DNSKEY:48,HTTPS:65,CAA:257};
+const TNAME = Object.fromEntries(Object.entries(TYPES).map(([k,v])=>[v,k]));
+const RCODE = {0:'NOERROR',1:'FORMERR',2:'SERVFAIL',3:'NXDOMAIN',4:'NOTIMP',5:'REFUSED'};
+const stripDot = s => String(s||'').replace(/\.$/,'').toLowerCase();
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('on'); clearTimeout(toast._t); toast._t=setTimeout(()=>el.classList.remove('on'),1600); }
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); toast('Copied'); }
+  catch(e){ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); toast('Copied'); }catch(_){ toast('Copy failed — select and copy manually'); } ta.remove(); }
+}
+function download(name, text, type='text/plain'){
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type})); a.download=name;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},800);
+}
+const store = { get(k,d){ try{ const v=localStorage.getItem('ratatoskr-'+k); return v==null?d:JSON.parse(v);}catch(e){return d;} },
+                set(k,v){ try{ localStorage.setItem('ratatoskr-'+k, JSON.stringify(v)); }catch(e){} } };
+
+/* Public-suffix-lite for organizational domain */
+const MULTI = new Set(['co.uk','org.uk','ac.uk','gov.uk','ltd.uk','plc.uk','me.uk','net.uk','com.au','net.au','org.au','edu.au','gov.au','co.nz','org.nz','net.nz','com.br','net.br','co.jp','ne.jp','or.jp','co.za','org.za','com.mx','org.mx','co.in','net.in','org.in','com.cn','com.sg','com.tr','com.hk','co.kr','com.ar','com.co','co.il','com.my','com.ph','com.pk','com.ng']);
+function orgDomain(d){ const p=d.split('.'); if(p.length<=2) return d; const l2=p.slice(-2).join('.'); return MULTI.has(l2)? p.slice(-3).join('.') : l2; }
+
+/* ---------- IP helpers ---------- */
+function ip4ToInt(ip){ const p=String(ip).split('.'); if(p.length!==4) return null; let n=0; for(const x of p){ if(!/^\d{1,3}$/.test(x)||+x>255) return null; n=n*256+(+x);} return n; }
+function in4(ip,cidr){ const [b,l]=cidr.split('/'); const a=ip4ToInt(ip), n=ip4ToInt(b); if(a==null||n==null) return false; const len=l==null?32:+l; const div=2**(32-len); return Math.floor(a/div)===Math.floor(n/div); }
+function ip6ToBig(ip){
+  ip=String(ip).toLowerCase(); if(!ip.includes(':')) return null;
+  let tail=[]; const m4=ip.match(/(\d+\.\d+\.\d+\.\d+)$/);
+  if(m4){ const v=ip4ToInt(m4[1]); if(v==null) return null; tail=[(v>>>16).toString(16),(v&0xffff).toString(16)]; ip=ip.slice(0,-m4[1].length).replace(/:$/,'') + (tail.length?':':''); ip=ip.replace(/:$/,''); }
+  let parts; if(ip.includes('::')){ const [h,t]=ip.split('::'); const hp=h?h.split(':'):[], tp=t?t.split(':'):[]; const fill=8-hp.length-tp.length-tail.length; if(fill<0) return null; parts=[...hp,...Array(fill).fill('0'),...tp,...tail]; }
+  else parts=[...ip.split(':'),...tail];
+  if(parts.length!==8) return null; let n=0n; for(const p of parts){ if(!/^[0-9a-f]{1,4}$/.test(p)) return null; n=(n<<16n)+BigInt(parseInt(p,16)); } return n;
+}
+function in6(ip,cidr){ const [b,l]=cidr.split('/'); const a=ip6ToBig(ip), n=ip6ToBig(b); if(a==null||n==null) return false; const sh=BigInt(128-(+l)); return (a>>sh)===(n>>sh); }
+function inRange(ip,cidr){ return cidr.includes(':') ? in6(ip,cidr) : in4(ip,cidr); }
+function ptrName(ip){
+  if(ip4ToInt(ip)!=null) return ip.split('.').reverse().join('.')+'.in-addr.arpa';
+  const n=ip6ToBig(ip); if(n==null) return null; return n.toString(16).padStart(32,'0').split('').reverse().join('.')+'.ip6.arpa';
+}
+
+/* ---------- Privacy guard ---------- */
+const PRIVATE_RANGES=['0.0.0.0/8','10.0.0.0/8','100.64.0.0/10','127.0.0.0/8','169.254.0.0/16','172.16.0.0/12','192.0.0.0/24','192.168.0.0/16','198.18.0.0/15','224.0.0.0/4','240.0.0.0/4','::1/128','::/128','fc00::/7','fe80::/10','ff00::/8'];
+const isIp = x => ip4ToInt(x)!=null || ip6ToBig(x)!=null;
+const isPrivateIp = ip => PRIVATE_RANGES.some(c=>inRange(ip,c));
+function arpaToIp(n){ let m=n.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)\.in-addr\.arpa$/); if(m) return [m[4],m[3],m[2],m[1]].join('.');
+  m=n.match(/^((?:[0-9a-f]\.){32})ip6\.arpa$/); if(m){ const h=m[1].split('.').filter(Boolean).reverse().join(''); return h.match(/.{4}/g).join(':'); } return null; }
+const GUARD={list:[], noIpGp:true, noPtr:false};
+function guardLoad(){ const raw=$('#pgList').value; GUARD.list=[...new Set(raw.split(/[\s,;]+/).map(x=>x.trim().toLowerCase().replace(/\.$/,'')).filter(Boolean))];
+  GUARD.noIpGp=$('#pgNoIpGp').checked; GUARD.noPtr=$('#pgNoPtr').checked;
+  store.set('pg',{list:raw, noIpGp:GUARD.noIpGp, noPtr:GUARD.noPtr});
+  $('#pgSum').textContent=`· ${GUARD.list.length} blocked entr${GUARD.list.length===1?'y':'ies'} + private ranges`; $('#pgCount').textContent=''; }
+/* returns a reason string if target must not leave the browser, else null */
+function guardCheck(target){
+  let t=String(target||'').toLowerCase().replace(/\.$/,''); const ip = isIp(t) ? t : arpaToIp(t);
+  if(ip){ if(isPrivateIp(ip)) return 'private/reserved IP';
+    for(const e of GUARD.list){ if(isIp(e.split('/')[0]) && (e.includes('/')? inRange(ip,e) : (ip6ToBig(e)!=null&&ip6ToBig(ip)!=null ? ip6ToBig(e)===ip6ToBig(ip) : e===ip))) return 'blocklisted IP'; }
+    return null; }
+  for(const e of GUARD.list){ if(isIp(e.split('/')[0])) continue; if(t===e || t.endsWith('.'+e)) return 'blocklisted host'; }
+  return null;
+}
+
+/* ---------- Known ranges / patterns ---------- */
+const PROXY_RANGES = [
+  {name:'Cloudflare', kind:'proxy', r:['173.245.48.0/20','103.21.244.0/22','103.22.200.0/22','103.31.4.0/22','141.101.64.0/18','108.162.192.0/18','190.93.240.0/20','188.114.96.0/20','197.234.240.0/22','198.41.128.0/17','162.158.0.0/15','104.16.0.0/13','104.24.0.0/14','172.64.0.0/13','131.0.72.0/22','2400:cb00::/32','2606:4700::/32','2803:f800::/32','2405:b500::/32','2405:8100::/32','2a06:98c0::/29','2c0f:f248::/32']},
+  {name:'Sucuri WAF', kind:'proxy', r:['192.88.134.0/23','185.93.228.0/22','66.248.200.0/22','208.109.0.0/22','2a02:fe80::/29']},
+  {name:'Imperva / Incapsula', kind:'proxy', r:['199.83.128.0/21','198.143.32.0/19','149.126.72.0/21','103.28.248.0/22','45.64.64.0/22','185.11.124.0/22','192.230.64.0/18','107.154.0.0/16','45.60.0.0/16','45.223.0.0/16']},
+  {name:'Fastly', kind:'proxy', r:['151.101.0.0/16','199.232.0.0/16','146.75.0.0/17','2a04:4e40::/32','2a04:4e42::/32']},
+  {name:'GitHub Pages', kind:'host', r:['185.199.108.0/22','2606:50c0::/32']},
+  {name:'Squarespace', kind:'host', r:['198.185.159.0/24','198.49.23.0/24','198.185.159.144/28']},
+  {name:'Shopify', kind:'host', r:['23.227.38.0/24']},
+  {name:'Vercel', kind:'host', r:['76.76.21.0/24']},
+  {name:'Wix', kind:'host', r:['185.230.63.0/24','185.230.62.0/24','23.236.62.147/32']},
+];
+const CNAME_HINTS = [
+  [/\.cdn\.cloudflare\.net$/,'Cloudflare (SaaS/CNAME setup)','proxy'],[/\.cloudfront\.net$/,'AWS CloudFront','proxy'],[/\.azureedge\.net$/,'Azure CDN','proxy'],
+  [/\.azurefd\.net$/,'Azure Front Door','proxy'],[/\.trafficmanager\.net$/,'Azure Traffic Manager','host'],[/\.azurewebsites\.net$/,'Azure App Service','host'],
+  [/\.cloudapp\.azure\.com$/,'Azure VM / LB','host'],[/\.azurestaticapps\.net$/,'Azure Static Web Apps','host'],
+  [/\.(akamaiedge|edgekey|edgesuite|akamaized|akamai)\.net$/,'Akamai','proxy'],[/\.(fastly|fastlylb)\.net$/,'Fastly','proxy'],
+  [/\.incapdns\.net$/,'Imperva / Incapsula','proxy'],[/sucuri/,'Sucuri WAF','proxy'],[/\.b-cdn\.net$/,'Bunny CDN','proxy'],[/stackpathdns\.com$/,'StackPath','proxy'],
+  [/\.elb\.amazonaws\.com$/,'AWS Elastic Load Balancer','host'],[/s3-website|\.s3\.amazonaws\.com$/,'AWS S3','host'],[/\.awsglobalaccelerator\.com$/,'AWS Global Accelerator','host'],
+  [/\.netlify\.(app|com)$/,'Netlify','host'],[/vercel-dns\.com$|\.vercel\.app$/,'Vercel','host'],[/\.herokudns\.com$|\.herokuapp\.com$/,'Heroku','host'],
+  [/\.github\.io$/,'GitHub Pages','host'],[/myshopify\.com$/,'Shopify','host'],[/squarespace\.com$/,'Squarespace','host'],[/wixdns\.net$/,'Wix','host'],
+  [/wpengine\.com$|wpenginepowered\.com$/,'WP Engine','host'],[/kinsta\.cloud$/,'Kinsta','host'],[/pantheonsite\.io$/,'Pantheon','host'],
+  [/ghs\.googlehosted\.com$|ghs\.google\.com$/,'Google Sites / Blogger','host'],[/hubspot|hs-sites\.com$/,'HubSpot CMS','host'],[/webflow\.(io|com)$/,'Webflow','host'],
+  [/godaddysites\.com$/,'GoDaddy Website Builder','host'],[/weebly\.com$/,'Weebly','host'],[/\.zendesk\.com$/,'Zendesk','host'],
+  [/autodiscover\.outlook\.com$/,'Microsoft 365 Autodiscover','host'],[/manage\.microsoft\.com$/,'Microsoft Intune','host'],[/online\.lync\.com$/,'Microsoft Teams/Skype','host'],
+  [/\.onmicrosoft\.com$/,'Microsoft 365','host'],[/\.outlook\.com$/,'Microsoft 365','host'],
+];
+const PTR_HINTS = [
+  [/amazonaws\.com$/,'AWS'],[/googleusercontent\.com$|1e100\.net$/,'Google Cloud'],[/linode|akamaitechnologies/,'Akamai / Linode'],[/vultr/,'Vultr'],
+  [/secureserver\.net$/,'GoDaddy'],[/unifiedlayer\.com$|bluehost|websitewelcome\.com$|hostgator/,'Newfold (Bluehost/HostGator)'],[/ovh\./,'OVH'],
+  [/your-server\.de$|hetzner/,'Hetzner'],[/liquidweb/,'Liquid Web'],[/inmotionhosting/,'InMotion'],[/a2hosting/,'A2 Hosting'],[/dreamhost/,'DreamHost'],
+  [/sgvps\.net$|siteground/,'SiteGround'],[/contabo/,'Contabo'],[/digitalocean/,'DigitalOcean'],[/rackspace|emailsrvr/,'Rackspace'],[/cloudflare/,'Cloudflare'],
+  [/outlook\.com$|protection\.outlook/,'Microsoft 365'],[/google\.com$/,'Google'],[/comcast|charter|spectrum|att\.net|verizon|cox\.net|frontiernet/,'ISP / business broadband'],
+];
+const MX_PROVIDERS = [
+  [/mail\.protection\.outlook\.com$|\.mx\.microsoft$/,'Microsoft 365'],[/(aspmx\.l\.google\.com|googlemail\.com|smtp\.google\.com|google\.com)$/,'Google Workspace'],
+  [/pphosted\.com$/,'Proofpoint'],[/ppe-hosted\.com$/,'Proofpoint Essentials'],[/mimecast/,'Mimecast'],[/barracudanetworks\.com$/,'Barracuda'],
+  [/iphmx\.com$/,'Cisco Secure Email'],[/messagelabs\.com$/,'Broadcom/Symantec Email Security'],[/hydra\.sophos\.com$|sophos/,'Sophos Email'],
+  [/tmes\.trendmicro|trendmicro/,'Trend Micro Email Security'],[/hornetsecurity|hornet/,'Hornetsecurity'],[/arsmtp\.com$|zixmail|appriver/,'Zix/AppRiver'],
+  [/secureserver\.net$/,'GoDaddy Email'],[/zoho\.(com|eu|in)$/,'Zoho Mail'],[/mx\.cloudflare\.net$/,'Cloudflare Email Routing'],[/protonmail\.ch$/,'Proton Mail'],
+  [/icloud\.com$/,'iCloud Mail'],[/yahoodns\.net$/,'Yahoo'],[/emailsrvr\.com$/,'Rackspace Email'],[/mailgun\.org$/,'Mailgun'],[/sendgrid\.net$/,'SendGrid'],
+  [/messagingengine\.com$/,'Fastmail'],[/privateemail\.com$/,'Namecheap Private Email'],[/ionos|kundenserver\.de$/,'IONOS'],[/mailspamprotection\.com$/,'SiteGround Email'],
+  [/spamexperts|antispamcloud/,'SpamExperts / N-able'],[/titan\.email$/,'Titan Email'],[/improvmx\.com$/,'ImprovMX'],[/forwardemail\.net$/,'Forward Email'],
+];
+const NS_PROVIDERS = [
+  [/cloudflare\.com$/,'Cloudflare'],[/awsdns/,'AWS Route 53'],[/azure-dns\./,'Azure DNS'],[/domaincontrol\.com$/,'GoDaddy'],[/googledomains\.com$|ns-cloud-.*\.googledomains/,'Google Cloud DNS'],
+  [/nsone\.net$/,'NS1'],[/ultradns/,'UltraDNS'],[/dnsmadeeasy\.com$/,'DNS Made Easy'],[/registrar-servers\.com$/,'Namecheap'],[/wixdns\.net$/,'Wix'],
+  [/squarespacedns\.com$/,'Squarespace'],[/hostgator|websitewelcome/,'HostGator'],[/bluehost/,'Bluehost'],[/dnsimple/,'DNSimple'],[/name\.com$/,'Name.com'],
+  [/akam\.net$/,'Akamai Edge DNS'],[/dynect\.net$/,'Oracle Dyn'],[/digitalocean\.com$/,'DigitalOcean'],[/linode\.com$/,'Linode'],[/ovh\.net$/,'OVH'],
+  [/hetzner/,'Hetzner'],[/networksolutions\.com$|worldnic\.com$/,'Network Solutions'],[/ionos|ui-dns/,'IONOS'],[/porkbun\.com$/,'Porkbun'],[/vercel-dns\.com$/,'Vercel'],
+  [/netlify/,'Netlify'],[/dns\.he\.net$/,'Hurricane Electric'],[/hover\.com$/,'Hover'],[/gandi\.net$/,'Gandi'],[/register\.com$/,'Register.com'],[/siteground/,'SiteGround'],
+];
+const SPF_HINTS = [
+  [/spf\.protection\.outlook\.com$/,'Microsoft 365'],[/_spf\.google\.com$/,'Google Workspace'],[/servers\.mcsv\.net$/,'Mailchimp'],[/mandrillapp\.com$/,'Mailchimp Transactional'],
+  [/sendgrid\.net$/,'SendGrid'],[/amazonses\.com$/,'Amazon SES'],[/mailgun\.org$/,'Mailgun'],[/_spf\.salesforce\.com$/,'Salesforce'],[/mktomail\.com$/,'Marketo'],
+  [/mail\.zendesk\.com$/,'Zendesk'],[/mtasv\.net$/,'Postmark'],[/sparkpostmail\.com$/,'SparkPost'],[/secureserver\.net$/,'GoDaddy'],[/zoho\.(com|eu)$/,'Zoho'],
+  [/messagingengine\.com$/,'Fastmail'],[/emailsrvr\.com$/,'Rackspace'],[/pphosted\.com$/,'Proofpoint'],[/mimecast/,'Mimecast'],[/mailjet\.com$/,'Mailjet'],
+  [/constantcontact\.com$/,'Constant Contact'],[/hubspotemail\.net$|hubspot/,'HubSpot'],[/freshdesk|freshemail/,'Freshworks'],[/atlassian\.net$/,'Atlassian'],
+  [/service-now\.com$/,'ServiceNow'],[/qualtrics/,'Qualtrics'],[/intuit/,'Intuit / QuickBooks'],[/docusign/,'DocuSign'],[/smtp2go/,'SMTP2GO'],[/brevo|sendinblue/,'Brevo'],
+  [/klaviyo/,'Klaviyo'],[/protonmail\.ch$/,'Proton'],[/icloud\.com$/,'iCloud'],[/mx\.cloudflare\.net$/,'Cloudflare Email Routing'],[/exclaimer/,'Exclaimer'],[/codetwo/,'CodeTwo'],
+];
+const DKIM_SELECTORS = [
+  ['selector1','Microsoft 365'],['selector2','Microsoft 365'],['google','Google Workspace'],['google2048','Google Workspace'],['default','cPanel / generic'],['dkim','Generic'],
+  ['mail','Generic'],['smtp','Generic / Mailgun'],['mx','Mailgun'],['pic','Mailgun'],['k1','Mailchimp / Mailgun'],['k2','Mailchimp'],['k3','Mailchimp'],
+  ['mte1','Mailchimp Transactional'],['mte2','Mailchimp Transactional'],['mandrill','Mandrill'],['s1','SendGrid'],['s2','SendGrid'],['smtpapi','SendGrid (legacy)'],
+  ['m1','SendGrid / generic'],['cm','Campaign Monitor'],['ctct1','Constant Contact'],['ctct2','Constant Contact'],['sf1','Salesforce'],['sf2','Salesforce'],
+  ['zendesk1','Zendesk'],['zendesk2','Zendesk'],['zoho','Zoho'],['zmail','Zoho'],['protonmail','Proton'],['protonmail2','Proton'],['protonmail3','Proton'],
+  ['sig1','iCloud'],['fm1','Fastmail'],['fm2','Fastmail'],['fm3','Fastmail'],['mailjet','Mailjet'],['mxvault','MXVault'],['everlytickey1','Everlytic'],
+  ['everlytickey2','Everlytic'],['s1024','Yahoo / AOL'],['s2048','Yahoo / AOL'],['dkim1','Generic'],['dkim2','Generic'],['key1','Generic'],['key2','Generic'],
+  ['amazonses','Amazon SES (legacy)'],['krs','Mailchimp'],['hs1','HubSpot'],['hs2','HubSpot'],['brevo1','Brevo'],['brevo2','Brevo'],['mail1','Generic'],
+  ['x','Generic'],['200608','Generic'],['20230601','Generic'],['gmail','Google'],['spop1024','Generic'],['email','Generic'],['mesmtp','Generic'],
+];
+const VERIFY_PATTERNS = [
+  [/^MS=/,'Microsoft 365 tenant'],[/^google-site-verification=/,'Google'],[/^facebook-domain-verification=/,'Meta / Facebook'],[/^apple-domain-verification=/,'Apple'],
+  [/^atlassian-domain-verification=/,'Atlassian'],[/^docusign=/,'DocuSign'],[/^adobe-(idp-site|sign)-verification=/,'Adobe'],[/^ZOOM_verify_/i,'Zoom'],
+  [/^stripe-verification=/,'Stripe'],[/^globalsign-domain-verification=/,'GlobalSign'],[/^_?globalsign/,'GlobalSign'],[/^onetrust-domain-verification=/,'OneTrust'],
+  [/^webexdomainverification/i,'Webex'],[/^citrix-verification-code=/,'Citrix'],[/^dropbox-domain-verification=/,'Dropbox'],[/^slack-domain-verification=/,'Slack'],
+  [/^miro-verification=/,'Miro'],[/^cisco-ci-domain-verification=/,'Cisco'],[/^knowbe4-site-verification=/,'KnowBe4'],[/^mongodb-site-verification=/,'MongoDB'],
+  [/^yandex-verification:/,'Yandex'],[/^have-i-been-pwned-verification=/,'Have I Been Pwned'],[/^teamviewer-sso-verification=/,'TeamViewer'],
+  [/^openai-domain-verification=/,'OpenAI'],[/^anthropic-domain-verification/,'Anthropic'],[/^hubspot-developer-verification=/,'HubSpot'],[/^pardot/,'Salesforce Pardot'],
+  [/^(_)?amazonses:/,'Amazon SES'],[/^mailru-verification/,'Mail.ru'],[/^shopify-verification-code=/,'Shopify'],[/^brevo-code:|^Sendinblue-code:/i,'Brevo'],
+  [/^canva-site-verification=/,'Canva'],[/^notion-domain-verification/,'Notion'],[/^klaviyo-site-verification/,'Klaviyo'],[/^okta-verification/,'Okta'],
+  [/^duo_sso_verification|^duo-/,'Cisco Duo'],[/^lastpass-verification-code/,'LastPass'],[/^1password-site-verification/,'1Password'],[/^zapier-domain-verification/,'Zapier'],
+  [/^[a-z0-9-]+-(site-|domain-)?verification[=:]/i,'Other SaaS verification'],
+];
+const SUBS = ['www','mail','webmail','smtp','imap','pop','autodiscover','ftp','cpanel','whm','vpn','remote','rdweb','portal','api','dev','staging','test','shop','blog','origin','direct','owa','exchange','enterpriseenrollment','enterpriseregistration','lyncdiscover','sip','mta-sts','m','app','support'];
+const SRVS = ['_autodiscover._tcp','_sip._tls','_sipfederationtls._tcp','_submission._tcp','_submissions._tcp','_imaps._tcp','_pop3s._tcp','_caldavs._tcp','_carddavs._tcp','_xmpp-client._tcp'];
+const matchHint = (list, s) => { for(const [re,n] of list) if(re.test(s)) return n; return null; };
+
+/* ============================== DoH resolver ============================== */
+const RESOLVERS = {
+  google:{name:'Google', url:(n,t)=>`https://dns.google/resolve?name=${encodeURIComponent(n)}&type=${t}&do=1`, headers:{}},
+  cloudflare:{name:'Cloudflare', url:(n,t)=>`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(n)}&type=${t}&do=1`, headers:{accept:'application/dns-json'}},
+};
+class DNS {
+  constructor(primary, onProgress){ this.primary=primary; this.order=[primary, ...Object.keys(RESOLVERS).filter(k=>k!==primary)];
+    this.cache=new Map(); this.log=[]; this.blocked=[]; this.active=0; this.waiters=[]; this.max=8; this.done=0; this.total=0; this.onProgress=onProgress||(()=>{}); }
+  q(name,type){ name=stripDot(name); const key=name+'|'+type;
+    if(!this.cache.has(key)){ const why=guardCheck(name) || (GUARD.noPtr && type==='PTR' ? 'PTR lookups disabled' : null);
+      if(why){ const res={name,type,status:-2,rcode:'BLOCKED',error:why,answers:[],authority:[],resolver:'— (guard)',ms:0}; this.log.push(res); this.blocked.push({target:arpaToIp(name)||name, service:type==='PTR'?'DNS resolver (reverse lookup)':'DNS resolver', why}); this.cache.set(key,Promise.resolve(res)); return this.cache.get(key); } }
+    if(!this.cache.has(key)){ this.total++; this.cache.set(key, this._run(name,type)); } return this.cache.get(key); }
+  async _slot(){ while(this.active>=this.max) await new Promise(r=>this.waiters.push(r)); this.active++; }
+  _free(){ this.active--; const w=this.waiters.shift(); if(w) w(); }
+  async _run(name,type){
+    await this._slot(); const t0=performance.now(); let res=null, lastErr=null;
+    try{
+      for(const rk of this.order){
+        const R=RESOLVERS[rk];
+        for(let attempt=0; attempt<2 && !res; attempt++){
+          const ctl=new AbortController(); const to=setTimeout(()=>ctl.abort(),9000);
+          try{
+            const r=await fetch(R.url(name,type),{headers:R.headers, signal:ctl.signal});
+            if(r.status===429){ await sleep(600*(attempt+1)); continue; }
+            if(!r.ok) throw new Error('HTTP '+r.status);
+            const j=await r.json();
+            res={ name, type, status:j.Status, rcode:RCODE[j.Status]||('RCODE '+j.Status), ad:!!j.AD, resolver:R.name,
+              answers:(j.Answer||[]).map(a=>({name:stripDot(a.name), type:TNAME[a.type]||String(a.type), ttl:a.TTL, data:a.data})),
+              authority:(j.Authority||[]).map(a=>({name:stripDot(a.name), type:TNAME[a.type]||String(a.type), ttl:a.TTL, data:a.data})), comment:j.Comment };
+          }catch(e){ lastErr=e.name==='AbortError'?'timeout':e.message; }
+          finally{ clearTimeout(to); }
+        }
+        if(res) break;
+      }
+    } finally { this._free(); }
+    if(!res) res={name,type,status:-1,rcode:'ERROR',error:lastErr||'failed',answers:[],authority:[],resolver:'—'};
+    res.ms=Math.round(performance.now()-t0); this.log.push(res); this.done++; this.onProgress(this.done,this.total); return res;
+  }
+}
+const recs = (r, type) => r.answers.filter(a=>a.type===type);
+function txtParse(d){
+  d=String(d).trim();
+  if(d.startsWith('"')){ const parts=[]; const re=/"((?:[^"\\]|\\.)*)"/g; let m;
+    while((m=re.exec(d))) parts.push(m[1].replace(/\\(\d{3})/g,(_,n)=>String.fromCharCode(+n)).replace(/\\(.)/g,'$1'));
+    return {text:parts.join(''), chunks:parts}; }
+  return {text:d, chunks:[d]};
+}
+const txts = r => recs(r,'TXT').map(a=>txtParse(a.data));
+function decodeGeneric(d){ const m=String(d).match(/^\\#\s+(\d+)\s*([0-9a-f\s]*)$/i); if(!m) return null; const hex=m[2].replace(/\s+/g,''); const b=[]; for(let i=0;i<hex.length;i+=2) b.push(parseInt(hex.substr(i,2),16)); return b; }
+function caaText(d){ const b=decodeGeneric(d); if(!b) return d; const flags=b[0], tl=b[1]; const tag=String.fromCharCode(...b.slice(2,2+tl)); const val=String.fromCharCode(...b.slice(2+tl)); return `${flags} ${tag} "${val}"`; }
+
+/* ============================== SPF ============================== */
+function parseSpfTerm(tok){
+  const t={raw:tok};
+  let m=tok.match(/^([a-z][a-z0-9_.-]*)=(.*)$/i);
+  if(m){ t.kind='mod'; t.name=m[1].toLowerCase(); t.value=m[2]; if(!['redirect','exp'].includes(t.name)) t.warn='Unknown modifier (ignored by receivers)'; if(t.value.includes('%{')) t.macro=true; return t; }
+  let s=tok, q='+'; if(/^[+\-~?]/.test(s)){ q=s[0]; s=s.slice(1); }
+  t.kind='mech'; t.q=q;
+  const i=s.search(/[:\/]/); t.name=(i<0?s:s.slice(0,i)).toLowerCase(); const rest=i<0?'':s.slice(i);
+  const domCidr = () => { let dom=null, c=rest; if(rest.startsWith(':')){ const r2=rest.slice(1); const si=r2.indexOf('/'); dom=si<0?r2:r2.slice(0,si); c=si<0?'':r2.slice(si); }
+    const cm=c.match(/^(?:\/(\d+))?(?:\/\/(\d+))?$/); if(!cm) t.error=`Bad CIDR in "${tok}"`; else { t.c4=cm[1]; t.c6=cm[2]; } t.value=dom; };
+  switch(t.name){
+    case 'all': if(rest) t.error=`"all" takes no argument ("${tok}")`; break;
+    case 'include': case 'exists': if(!rest.startsWith(':')||rest.length<2) t.error=`"${t.name}" needs a domain ("${tok}")`; else t.value=rest.slice(1); break;
+    case 'a': case 'mx': domCidr(); break;
+    case 'ptr': t.value=rest.startsWith(':')?rest.slice(1):null; break;
+    case 'ip4': { const v=rest.slice(1); const [ip,c]=v.split('/'); if(!rest.startsWith(':')||ip4ToInt(ip)==null||(c!=null&&!(+c>=0&&+c<=32&&/^\d+$/.test(c)))) t.error=`Invalid ip4 "${tok}"`; t.value=v; t.cidr=c==null?32:+c; break; }
+    case 'ip6': { const v=rest.slice(1); const si=v.lastIndexOf('/'); const ip=si<0?v:v.slice(0,si), c=si<0?null:v.slice(si+1); if(!rest.startsWith(':')||ip6ToBig(ip)==null||(c!=null&&!(+c>=0&&+c<=128&&/^\d+$/.test(c)))) t.error=`Invalid ip6 "${tok}"`; t.value=v; t.cidr=c==null?128:+c; break; }
+    default: t.error=`Unknown mechanism "${tok}" (PermError)`;
+  }
+  if(t.value && t.value.includes('%{')) t.macro=true;
+  return t;
+}
+async function evalSpf(dns, domain){
+  const ctx={lookups:0, voids:0, errors:[], warnings:[], visited:new Set(), ip4count:0, ip6n:0, includes:[], services:new Set()};
+  const root=await spfNode(dns, domain, ctx, 0, 'root');
+  return {root, ctx};
+}
+async function spfNode(dns, domain, ctx, depth, via){
+  const node={domain, via, records:[], record:null, terms:[], children:[], error:null, lookups:0};
+  const hint=matchHint(SPF_HINTS, domain); if(hint && depth>0) { ctx.services.add(hint); node.hint=hint; }
+  if(depth>10){ node.error='Too deep (>10 levels)'; ctx.errors.push(`Include chain deeper than 10 at ${domain}`); return node; }
+  if(depth>0 && ctx.visited.has(domain)){ node.error='Already included elsewhere (duplicate/loop)'; ctx.warnings.push(`${domain} is included more than once — wastes lookups or loops`); return node; }
+  ctx.visited.add(domain);
+  const r=await dns.q(domain,'TXT');
+  if(r.status===-1){ node.error='Query failed ('+r.error+')'; ctx.errors.push(`Could not resolve ${domain} TXT (${r.error})`); return node; }
+  if(r.status===2){ node.error='SERVFAIL'; ctx.errors.push(`${domain} returns SERVFAIL (TempError)`); return node; }
+  const spfs=txts(r).filter(t=>/^v=spf1(\s|$)/i.test(t.text));
+  node.records=spfs.map(s=>s.text);
+  if(!spfs.length){ node.error=r.status===3?'Domain does not exist (NXDOMAIN)':'No SPF record';
+    if(depth>0){ ctx.errors.push(`${via}:${domain} has no SPF record — receivers return PermError`); ctx.voids++; } return node; }
+  if(spfs.length>1){ node.error='Multiple SPF records'; ctx.errors.push(`${domain} publishes ${spfs.length} SPF records — PermError. Merge into one.`); }
+  const rec=spfs[0]; node.record=rec.text; node.chunks=rec.chunks; node.length=rec.text.length;
+  const tokens=rec.text.trim().split(/\s+/).slice(1);
+  let seenAll=false, redirect=null; const jobs=[];
+  for(const tok of tokens){
+    const t=parseSpfTerm(tok); node.terms.push(t);
+    if(t.error){ ctx.errors.push(`${domain}: ${t.error}`); continue; }
+    if(seenAll && t.kind==='mech'){ t.warn='Ignored — appears after "all"'; ctx.warnings.push(`${domain}: "${tok}" comes after "all" and is ignored`); continue; }
+    if(t.kind==='mod'){ if(t.name==='redirect') redirect=t; continue; }
+    if(['include','a','mx','ptr','exists'].includes(t.name)){ ctx.lookups++; node.lookups++; t.lookup=true; }
+    switch(t.name){
+      case 'all': seenAll=true; node.allQ=t.q; break;
+      case 'ip4': ctx.ip4count+=2**(32-t.cidr); if(t.cidr<16 && depth===0){ t.warn=`Very broad range (/${t.cidr} = ${(2**(32-t.cidr)).toLocaleString()} addresses)`; ctx.warnings.push(`${domain}: ip4:${t.value} authorizes ${(2**(32-t.cidr)).toLocaleString()} addresses`); } break;
+      case 'ip6': ctx.ip6n++; if(t.cidr<32 && depth===0){ t.warn='Very broad IPv6 range'; ctx.warnings.push(`${domain}: very broad ip6 range ${t.value}`);} break;
+      case 'ptr': t.warn='Deprecated (RFC 7208) — slow and unreliable'; ctx.warnings.push(`${domain}: uses "ptr" — deprecated; replace with ip4/ip6 or include`); break;
+      case 'exists': t.note='Macro/exists lookup — not expanded'; break;
+      case 'include': ctx.includes.push(t.value);
+        if(t.macro){ t.note='Contains macros — not expanded'; break; }
+        jobs.push(spfNode(dns, t.value, ctx, depth+1, 'include').then(c=>{ t.child=c; node.children.push(c); })); break;
+      case 'a': case 'mx': { const target=t.value||domain; if(t.macro){ t.note='Macro — not expanded'; break; }
+        jobs.push((async()=>{
+          if(t.name==='a'){ const [a4,a6]=await Promise.all([dns.q(target,'A'),dns.q(target,'AAAA')]); t.ips=[...recs(a4,'A'),...recs(a6,'AAAA')].map(x=>x.data);
+            if(!t.ips.length){ ctx.voids++; t.warn='Resolves to no addresses (void lookup)'; } }
+          else { const m=await dns.q(target,'MX'); const hosts=recs(m,'MX').map(x=>stripDot(x.data.split(/\s+/)[1])).filter(h=>h&&h!=='.' ); t.mxHosts=hosts;
+            if(!hosts.length){ ctx.voids++; t.warn='No MX records (void lookup)'; }
+            if(hosts.length>10){ t.error='More than 10 MX hosts — PermError'; ctx.errors.push(`${domain}: mx mechanism with >10 MX hosts`); }
+            const ips=[]; for(const h of hosts.slice(0,10)){ const a=await dns.q(h,'A'); ips.push(...recs(a,'A').map(x=>x.data)); } t.ips=ips; }
+        })()); break; }
+    }
+  }
+  if(redirect){
+    if(seenAll){ redirect.warn='Ignored — record already has "all"'; }
+    else if(redirect.macro){ redirect.note='Macro — not expanded'; }
+    else { ctx.lookups++; node.lookups++; redirect.lookup=true;
+      jobs.push(spfNode(dns, redirect.value, ctx, depth+1, 'redirect').then(c=>{ redirect.child=c; node.children.push(c); node.redirectAll=c.allQ||c.redirectAll; })); }
+  }
+  await Promise.all(jobs);
+  node.children=node.terms.filter(t=>t.child).map(t=>t.child);
+  if(depth===0){
+    node.effAll = node.allQ || node.redirectAll || null;
+    if(rec.text.length>450) ctx.warnings.push(`SPF record is ${rec.text.length} chars — over ~450 risks UDP truncation`);
+  }
+  return node;
+}
+
+/* ============================== DMARC ============================== */
+async function evalDmarc(dns, domain){
+  const out={found:false, domain, source:domain, inherited:false, tags:{}, errors:[], warnings:[], rua:[], ruf:[], other:[]};
+  let r=await dns.q('_dmarc.'+domain,'TXT'); let all=txts(r);
+  let list=all.filter(t=>/^v\s*=\s*DMARC1\b/i.test(t.text));
+  out.other=all.filter(t=>!/^v\s*=\s*DMARC1\b/i.test(t.text)).map(t=>t.text);
+  if(!list.length){
+    const od=orgDomain(domain);
+    if(od!==domain){ const r2=await dns.q('_dmarc.'+od,'TXT'); const l2=txts(r2).filter(t=>/^v\s*=\s*DMARC1\b/i.test(t.text)); if(l2.length){ list=l2; out.source=od; out.inherited=true; } }
+  }
+  if(!list.length){ if(all.length) out.errors.push(`_dmarc.${domain} has TXT data but none starts with "v=DMARC1"`); return out; }
+  out.found=true;
+  if(list.length>1) out.errors.push(`${list.length} DMARC records published — receivers will ignore DMARC entirely. Keep one.`);
+  out.record=list[0].text;
+  const parts=out.record.split(';').map(s=>s.trim()).filter(Boolean);
+  parts.forEach((p,i)=>{ const m=p.match(/^([a-z]+)\s*=\s*(.*)$/i); if(!m){ out.errors.push(`Malformed tag "${p}"`); return; }
+    const k=m[1].toLowerCase(), v=m[2].trim();
+    if(out.tags[k]!=null) out.warnings.push(`Duplicate tag "${k}"`);
+    out.tags[k]=v; if(i===0 && k!=='v') out.errors.push('"v=DMARC1" must be the first tag'); });
+  const T=out.tags; const pol=['none','quarantine','reject'];
+  if(T.v!=='DMARC1') out.errors.push(`Version must be exactly "DMARC1" (found "${T.v}")`);
+  if(!T.p) out.errors.push('Missing required "p=" policy tag');
+  else if(!pol.includes(T.p.toLowerCase())) out.errors.push(`Invalid p= value "${T.p}"`);
+  if(T.sp && !pol.includes(T.sp.toLowerCase())) out.errors.push(`Invalid sp= value "${T.sp}"`);
+  if(T.np && !pol.includes(T.np.toLowerCase())) out.warnings.push(`Invalid np= value "${T.np}"`);
+  if(T.pct!=null && !(/^\d+$/.test(T.pct) && +T.pct<=100)) out.errors.push(`Invalid pct= "${T.pct}" (0-100)`);
+  for(const k of ['adkim','aspf']) if(T[k] && !/^[rs]$/i.test(T[k])) out.errors.push(`Invalid ${k}= "${T[k]}" (r or s)`);
+  if(T.fo && !/^[01ds](:[01ds])*$/i.test(T.fo)) out.warnings.push(`Unusual fo= "${T.fo}"`);
+  const known=['v','p','sp','np','pct','rua','ruf','adkim','aspf','fo','rf','ri','psd','t'];
+  Object.keys(T).forEach(k=>{ if(!known.includes(k)) out.warnings.push(`Unknown tag "${k}" (ignored)`); });
+  out.p=(T.p||'').toLowerCase(); out.sp=(T.sp||T.p||'').toLowerCase(); out.pct=T.pct!=null? +T.pct : 100;
+  out.effective = out.inherited ? out.sp : out.p;
+  const parseUris = v => (v||'').split(',').map(s=>s.trim()).filter(Boolean).map(u=>{ const m=u.match(/^mailto:([^!@\s]+)@([^!\s]+)(!.*)?$/i);
+    return m? {uri:u, addr:m[1]+'@'+m[2], host:stripDot(m[2])} : {uri:u, bad:true}; });
+  out.rua=parseUris(T.rua); out.ruf=parseUris(T.ruf);
+  [...out.rua,...out.ruf].forEach(u=>{ if(u.bad) out.errors.push(`Report URI "${u.uri}" isn't a valid mailto: address`); });
+  // External destination verification (RFC 7489 §7.1)
+  const myOrg=orgDomain(out.source);
+  await Promise.all([...out.rua,...out.ruf].filter(u=>!u.bad).map(async u=>{
+    if(orgDomain(u.host)===myOrg){ u.internal=true; return; }
+    const vr=await dns.q(`${out.source}._report._dmarc.${u.host}`,'TXT'); u.authorized = txts(vr).some(t=>/^v=DMARC1/i.test(t.text));
+    if(!u.authorized) out.warnings.push(`External report address ${u.addr} hasn't authorized ${out.source} (no ${out.source}._report._dmarc.${u.host} record) — reports may be dropped`);
+  }));
+  return out;
+}
+
+/* ============================== DKIM ============================== */
+function rsaBits(b64){
+  try{
+    const bin=atob(b64.replace(/\s+/g,'')); const b=Uint8Array.from(bin,c=>c.charCodeAt(0)); let i=0;
+    const tl=()=>{ const tag=b[i++]; let len=b[i++]; if(len&0x80){ const n=len&0x7f; len=0; for(let k=0;k<n;k++) len=len*256+b[i++]; } return {tag,len,start:i}; };
+    const t=tl(); if(t.tag!==0x30) return null; let t2=tl();
+    if(t2.tag===0x30){ i=t2.start+t2.len; const bs=tl(); if(bs.tag!==0x03) return null; i++; const sq=tl(); if(sq.tag!==0x30) return null; t2=tl(); }
+    if(t2.tag!==0x02) return null; let s=t2.start, len=t2.len; while(len>0&&b[s]===0){ s++; len--; } if(len<=0) return null;
+    return (len-1)*8 + (32-Math.clz32(b[s]));
+  }catch(e){ return null; }
+}
+function parseDkim(text){
+  const tags={}; text.split(';').map(s=>s.trim()).filter(Boolean).forEach(p=>{ const m=p.match(/^([a-z]+)\s*=\s*([\s\S]*)$/i); if(m) tags[m[1].toLowerCase()]=m[2].replace(/\s+/g,''); });
+  const k=(tags.k||'rsa').toLowerCase(); const o={tags, k, testing:/(^|:)y(:|$)/i.test(tags.t||''), strict:/(^|:)s(:|$)/i.test(tags.t||'')};
+  if(tags.p==null) o.error='No p= public key tag';
+  else if(tags.p==='') o.revoked=true;
+  else o.bits = k==='ed25519' ? 256 : rsaBits(tags.p);
+  if(tags.v && tags.v!=='DKIM1') o.error='v= must be DKIM1';
+  return o;
+}
+async function evalDkim(dns, domain, extra){
+  const seen=new Set(); const list=[];
+  for(const s of extra) if(s && !seen.has(s)){ seen.add(s); list.push([s,'Custom']); }
+  for(const [s,p] of DKIM_SELECTORS) if(!seen.has(s)){ seen.add(s); list.push([s,p]); }
+  const rnd='zz'+Math.random().toString(36).slice(2,10);
+  const wild=await dns.q(`${rnd}._domainkey.${domain}`,'TXT'); const wildcard = txts(wild).some(t=>/p=/.test(t.text));
+  const results=await Promise.all(list.map(async([sel,prov])=>{
+    const name=`${sel}._domainkey.${domain}`; const r=await dns.q(name,'TXT');
+    const cn=recs(r,'CNAME').map(x=>stripDot(x.data)); const t=txts(r).filter(x=>/(^|;)\s*(v=DKIM1|p=|k=)/i.test(x.text));
+    if(!t.length && !cn.length) return null;
+    const o={selector:sel, provider:prov, name, cname:cn, record:t[0]?.text||null};
+    if(o.record){ Object.assign(o, parseDkim(o.record)); const ch=cn.length? matchHint(CNAME_HINTS,cn[cn.length-1])||matchHint(SPF_HINTS,cn[cn.length-1]) : null; if(ch) o.provider=ch; }
+    else o.danglingCname=true;
+    return o;
+  }));
+  return {probed:list.length, wildcard, keys:results.filter(Boolean)};
+}
+
+/* ============================== Hosts / proxy ============================== */
+async function resolveHost(dns, host){
+  const [a,aaaa]=await Promise.all([dns.q(host,'A'),dns.q(host,'AAAA')]);
+  const chain=[...new Set([...recs(a,'CNAME'),...recs(aaaa,'CNAME')].map(x=>stripDot(x.data)))];
+  const v4=recs(a,'A').map(x=>x.data), v6=recs(aaaa,'AAAA').map(x=>x.data);
+  return {host, status:a.rcode, nx:a.status===3, chain, v4, v6, ips:[...v4,...v6], ttl:(recs(a,'A')[0]||{}).ttl};
+}
+function classifyHost(h){
+  const tags=[]; let proxy=null;
+  for(const ip of h.ips) for(const g of PROXY_RANGES) if(g.r.some(c=>inRange(ip,c))){ if(!tags.find(t=>t.name===g.name)) tags.push({name:g.name,kind:g.kind,via:'IP range'}); if(g.kind==='proxy') proxy=g.name; }
+  for(const c of h.chain){ for(const [re,n,k] of CNAME_HINTS) if(re.test(c)){ if(!tags.find(t=>t.name===n)) tags.push({name:n,kind:k,via:'CNAME'}); if(k==='proxy') proxy=proxy||n; break; } }
+  for(const p of (h.ptrs||[])){ const n=matchHint(PTR_HINTS,p); if(n && !tags.find(t=>t.name===n)) tags.push({name:n,kind:'host',via:'PTR'}); }
+  h.tags=tags; h.proxy=proxy; return h;
+}
+async function addPtrs(dns, h, limit=3){
+  h.ptrs=[]; await Promise.all(h.ips.slice(0,limit).map(async ip=>{ const n=ptrName(ip); if(!n) return; const r=await dns.q(n,'PTR'); recs(r,'PTR').forEach(x=>h.ptrs.push(stripDot(x.data))); }));
+}
+
+/* ============================== RDAP ============================== */
+async function rdap(domain){
+  const ctl=new AbortController(); const to=setTimeout(()=>ctl.abort(),9000);
+  try{
+    const r=await fetch('https://rdap.org/domain/'+encodeURIComponent(domain),{signal:ctl.signal, headers:{accept:'application/rdap+json'}});
+    if(!r.ok) return {error:'HTTP '+r.status};
+    const j=await r.json(); const ev=k=>(j.events||[]).find(e=>e.eventAction===k)?.eventDate||null;
+    let registrar=null; for(const e of (j.entities||[])) if((e.roles||[]).includes('registrar')){ const fn=(e.vcardArray?.[1]||[]).find(v=>v[0]==='fn'); registrar=fn?fn[3]:(e.handle||null); }
+    return {registrar, created:ev('registration'), expires:ev('expiration'), changed:ev('last changed'), status:j.status||[], ns:(j.nameservers||[]).map(n=>stripDot(n.ldhName)), secure:j.secureDNS?.delegationSigned};
+  }catch(e){ return {error: e.name==='AbortError'?'timeout':'blocked or unavailable ('+e.message+')'}; }
+  finally{ clearTimeout(to); }
+}
+
+/* ============================== Connection timing ============================== */
+const median = a => { const b=[...a].sort((x,y)=>x-y); const m=b.length>>1; return b.length? (b.length%2?b[m]:(b[m-1]+b[m])/2) : null; };
+async function httpTiming(host, n=5){
+  const out={host, samples:[], errors:[], breakdown:null};
+  const why=guardCheck(host); if(why){ out.blockedWhy=why; out.loss=0; return out; }
+  for(let i=0;i<n;i++){
+    const url=`https://${host}/favicon.ico?rtk_t=${Date.now()}_${i}`;
+    const ctl=new AbortController(); const to=setTimeout(()=>ctl.abort(),8000); const t0=performance.now();
+    try{
+      await fetch(url,{mode:'no-cors',cache:'no-store',redirect:'follow',signal:ctl.signal});
+      const ms=performance.now()-t0; out.samples.push(Math.round(ms));
+      const e=performance.getEntriesByName(url)[0];
+      if(i===0 && e && e.connectEnd>0){ out.breakdown={dns:Math.round(e.domainLookupEnd-e.domainLookupStart), tcp:Math.round((e.secureConnectionStart>0?e.secureConnectionStart:e.connectEnd)-e.connectStart),
+        tls:e.secureConnectionStart>0?Math.round(e.connectEnd-e.secureConnectionStart):0, ttfb:Math.round(e.responseStart-e.requestStart), total:Math.round(e.responseEnd-e.startTime)}; }
+    }catch(e){ out.errors.push(e.name==='AbortError'?'timeout (8s)':'unreachable / blocked'); }
+    finally{ clearTimeout(to); }
+    await sleep(150);
+  }
+  if(out.samples.length){ out.cold=out.samples[0]; const warm=out.samples.slice(1); out.min=Math.min(...out.samples); out.max=Math.max(...out.samples);
+    out.warmMedian=warm.length?Math.round(median(warm)):null; out.jitter=warm.length>1?Math.round(Math.max(...warm)-Math.min(...warm)):null; }
+  out.loss=Math.round(out.errors.length/n*100);
+  return out;
+}
+const HIST_KEY='speedhist';
+function saveSpeed(domain, list){
+  const h=store.get(HIST_KEY,{}); const arr=h[domain]||[];
+  list.forEach(t=>arr.push({at:new Date().toISOString(), host:t.host, cold:t.cold??null, warm:t.warmMedian??null, min:t.min??null, max:t.max??null, jitter:t.jitter??null, loss:t.loss}));
+  h[domain]=arr.slice(-100); store.set(HIST_KEY,h);
+}
+const speedHistory = domain => (store.get(HIST_KEY,{})[domain]||[]);
+
+/* ============================== Regional (Globalping) ============================== */
+const GP='https://api.globalping.io/v1/measurements';
+const GP_DEFAULT={on:false, locs:'US+Tennessee\nUS+Virginia\nUS+Texas\nUS+California\nUS+Illinois', extra:'', token:'', ping:true, http:true, limit:'1'};
+function gpSettings(){ return {on:$('#gpOn').checked, locs:$('#gpLocs').value, extra:$('#gpExtra').value, token:$('#gpToken').value.trim(), ping:$('#gpPing').checked, http:$('#gpHttp').checked, limit:$('#gpLimit').value}; }
+function gpLoad(o){ o={...GP_DEFAULT,...(o||{})}; $('#gpOn').checked=o.on; $('#gpLocs').value=o.locs; $('#gpExtra').value=o.extra; $('#gpToken').value=o.token; $('#gpPing').checked=o.ping; $('#gpHttp').checked=o.http; $('#gpLimit').value=o.limit; gpMeta(); }
+const gpLocList = g => [...new Set(g.locs.split(/\n|,/).map(x=>x.trim()).filter(Boolean))];
+const gpExtraList = g => [...new Set(g.extra.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean))];
+function gpMeta(){ const g=gpSettings(); const n=gpLocList(g).length*(+g.limit); const per=n*((g.ping?1:0)+(g.http?1:0)) + gpExtraList(g).length*n*(g.ping?1:0);
+  $('#gpCost').textContent=`≈ ${per} tests per domain (${gpLocList(g).length} locations × ${g.limit} probe${g.limit>1?'s':''})`;
+  $('#gpSum').textContent = g.on ? `· ON · ${gpLocList(g).length} locations` : `· off`; store.set('gp',g); }
+async function gpMeasure(body, token){
+  const h={'content-type':'application/json'}; if(token) h.authorization='Bearer '+token;
+  let r=await fetch(GP,{method:'POST',headers:h,body:JSON.stringify(body)});
+  if(r.status===429) throw new Error('Globalping rate limit reached — wait for the hourly reset or add a free API token');
+  let j={}; try{ j=await r.json(); }catch(e){}
+  if(!r.ok){ const msg=j.error?.message||('HTTP '+r.status); const e=new Error(msg); e.status=r.status; e.params=j.error?.params; throw e; }
+  for(let i=0;i<45;i++){ await sleep(i<3?700:1300);
+    const g=await fetch(`${GP}/${j.id}`); const m=await g.json(); if(m.status && m.status!=='in-progress') return m; }
+  throw new Error('Globalping measurement timed out');
+}
+const gpWhere = p => [p.city, p.state, p.country].filter(Boolean).join(', ');
+async function regionalRun(host, g){
+  const out={at:new Date().toISOString(), host, rows:[], extra:[], errors:[]};
+  const locs=gpLocList(g); if(!locs.length){ out.errors.push('No locations configured'); return out; }
+  out.blocked=[]; const gw=guardCheck(host); if(gw){ out.blocked.push({target:host, service:'Globalping', why:gw}); out.errors.push(`${host} not sent to Globalping (${gw})`); return out; }
+  const locations=locs.map(m=>({magic:m, limit:+g.limit}));
+  let pingM=null;
+  try{
+    if(g.ping){ pingM=await gpMeasure({type:'ping', target:host, locations, measurementOptions:{packets:4}}, g.token); }
+    let httpM=null;
+    if(g.http){ const loc2 = pingM ? pingM.id : locations; const opts={protocol:'HTTPS', request:{method:'HEAD', path:'/'}};
+      try{ httpM=await gpMeasure({type:'http', target:host, locations:loc2, measurementOptions:opts}, g.token); }
+      catch(e){ if(e.status===400 && typeof loc2==='string') httpM=await gpMeasure({type:'http', target:host, locations, measurementOptions:opts}, g.token); else throw e; } }
+    const base=(pingM||httpM).results;
+    base.forEach((x,i)=>{ const pr=pingM?pingM.results[i]:null; const hr=httpM? (pingM? httpM.results[i] : x) : null; const P=x.probe;
+      const st=pr?.result?.stats||{}; const t=hr?.result?.timings||{};
+      out.rows.push({where:gpWhere(P), network:P.network||'', asn:P.asn||'', tags:P.tags||[],
+        ping: pr? {status:pr.result.status, min:st.min, avg:st.avg, max:st.max, loss:st.loss, ip:pr.result.resolvedAddress} : null,
+        http: hr? {status:hr.result.status, code:hr.result.statusCode, total:t.total, dns:t.dns, tcp:t.tcp, tls:t.tls, ttfb:t.firstByte, ip:hr.result.resolvedAddress} : null}); });
+  }catch(e){ out.errors.push(e.message); }
+  if(g.ping){ for(const x of gpExtraList(g)){
+      const why = guardCheck(x) || (GUARD.noIpGp && isIp(x) ? 'raw IPs not sent to Globalping' : null);
+      if(why){ out.blocked.push({target:x, service:'Globalping', why}); continue; }
+      try{ const m=await gpMeasure({type:'ping', target:x, locations: pingM?pingM.id:locations, measurementOptions:{packets:4}}, g.token);
+      m.results.forEach(r=>{ const st=r.result.stats||{}; out.extra.push({target:x, where:gpWhere(r.probe), network:r.probe.network||'', status:r.result.status, min:st.min, avg:st.avg, max:st.max, loss:st.loss}); }); }
+    catch(e){ out.errors.push(`${x}: ${e.message}`); } } }
+  const avgs=out.rows.map(r=>r.ping?.avg).filter(v=>typeof v==='number'); out.pingAvg=avgs.length?Math.round(avgs.reduce((a,b)=>a+b,0)/avgs.length):null;
+  const tt=out.rows.map(r=>r.http?.total).filter(v=>typeof v==='number'); out.httpAvg=tt.length?Math.round(tt.reduce((a,b)=>a+b,0)/tt.length):null;
+  return out;
+}
+const RHIST='regionhist';
+function saveRegional(domain, rg){ const h=store.get(RHIST,{}); const arr=h[domain]||[];
+  rg.rows.forEach(r=>arr.push({at:rg.at, kind:'site', target:rg.host, where:r.where, network:r.network, ping:r.ping?.avg??null, loss:r.ping?.loss??null, http:r.http?.total??null, ttfb:r.http?.ttfb??null, code:r.http?.code??null}));
+  rg.extra.forEach(r=>arr.push({at:rg.at, kind:'extra', target:r.target, where:r.where, network:r.network, ping:r.avg??null, loss:r.loss??null, http:null, ttfb:null, code:null}));
+  h[domain]=arr.slice(-300); store.set(RHIST,h); }
+const regionalHistory = d => (store.get(RHIST,{})[d]||[]);
+
+/* ============================== Main domain run ============================== */
+async function inspect(domain, opts, onProg){
+  const dns=new DNS(opts.resolver, onProg); const R={domain, org:orgDomain(domain), at:new Date().toISOString(), resolver:RESOLVERS[opts.resolver].name};
+  const base=await Promise.all(['A','AAAA','NS','SOA','MX','TXT','CAA','HTTPS','DS','DNSKEY'].map(t=>dns.q(domain,t)));
+  const [rA,rAAAA,rNS,rSOA,rMX,rTXT,rCAA,rHTTPS,rDS,rDNSKEY]=base;
+  const failed=base.filter(r=>r.status===-1);
+  if(failed.length>=base.length-1) throw new Error(`DNS lookups are being blocked (${failed[0]?.error||'network error'}). This usually means the file is open in a preview pane or sandbox. Download it and open it directly in Chrome or Edge.`);
+  R.exists = !(rSOA.status===3 && rNS.status===3 && rA.status===3);
+  R.servfail = base.filter(r=>r.status===2).map(r=>r.type);
+  R.queryErrors = base.filter(r=>r.status===-1).map(r=>r.type+': '+r.error);
+  // NS / SOA
+  R.ns=recs(rNS,'NS').map(x=>stripDot(x.data)); if(!R.ns.length){ const a=rSOA.authority.filter(x=>x.type==='SOA'); R.nsFromParentZone=a[0]?.name; }
+  R.dnsHost=[...new Set(R.ns.map(n=>matchHint(NS_PROVIDERS,n)||'Unknown/self-hosted'))];
+  const soa=recs(rSOA,'SOA')[0]; if(soa){ const p=soa.data.split(/\s+/); R.soa={primary:stripDot(p[0]), admin:stripDot(p[1]).replace('.', '@'), serial:p[2], refresh:p[3], retry:p[4], expire:p[5], minimum:p[6], ttl:soa.ttl}; }
+  // DNSSEC
+  R.dnssec={ds:recs(rDS,'DS').map(x=>x.data), dnskey:recs(rDNSKEY,'DNSKEY').length, ad:rA.ad||rSOA.ad||rNS.ad};
+  R.dnssec.state = R.dnssec.ds.length ? (R.dnssec.ad ? 'validated' : (R.servfail.length?'broken':'signed (not validated)')) : 'unsigned';
+  // CAA / HTTPS / TXT inventory
+  R.caa=recs(rCAA,'CAA').map(x=>caaText(x.data));
+  R.https=recs(rHTTPS,'HTTPS').map(x=>x.data);
+  R.txt=txts(rTXT).map(t=>t.text);
+  R.verifications=R.txt.map(t=>{ const n=matchHint(VERIFY_PATTERNS,t); return n?{service:n, value:t}:null; }).filter(Boolean);
+  // Mail
+  const mxs=recs(rMX,'MX').map(x=>{ const [pref,host]=x.data.split(/\s+/); return {pref:+pref, host:stripDot(host), ttl:x.ttl}; }).sort((a,b)=>a.pref-b.pref);
+  R.mail={mx:mxs, nullMx: mxs.length===1 && (mxs[0].host===''||mxs[0].host==='.'), mxStatus:rMX.rcode};
+  const realMx=R.mail.nullMx?[]:mxs;
+  const [spf, dmarc, dkim, mtasts, tlsrpt, bimi, mtastsHost] = await Promise.all([
+    evalSpf(dns, domain), evalDmarc(dns, domain), evalDkim(dns, domain, opts.selectors),
+    dns.q('_mta-sts.'+domain,'TXT'), dns.q('_smtp._tls.'+domain,'TXT'), dns.q('default._bimi.'+domain,'TXT'), resolveHost(dns,'mta-sts.'+domain),
+    Promise.all(realMx.map(async m=>{ const h=await resolveHost(dns,m.host); await addPtrs(dns,h,2); classifyHost(h); m.res=h; m.provider=matchHint(MX_PROVIDERS,m.host)||(h.chain.length?matchHint(MX_PROVIDERS,h.chain[h.chain.length-1]):null)||matchHint(PTR_HINTS,(h.ptrs||[])[0]||'')||null; })),
+  ]);
+  R.spf=spf; R.dmarc=dmarc; R.dkim=dkim;
+  R.mail.providers=[...new Set(realMx.map(m=>m.provider||'Unknown / self-hosted'))];
+  const sts=txts(mtasts).map(t=>t.text).filter(t=>/^v=STSv1/i.test(t));
+  R.mtasts={record:sts[0]||null, count:sts.length, hostResolves:mtastsHost.ips.length>0, policyUrl:`https://mta-sts.${domain}/.well-known/mta-sts.txt`};
+  const tr=txts(tlsrpt).map(t=>t.text).filter(t=>/^v=TLSRPTv1/i.test(t)); R.tlsrpt={record:tr[0]||null};
+  const bm=txts(bimi).map(t=>t.text).filter(t=>/^v=BIMI1/i.test(t)); R.bimi={record:bm[0]||null};
+  if(R.bimi.record){ const l=R.bimi.record.match(/l=([^;]*)/i), a=R.bimi.record.match(/a=([^;]*)/i); R.bimi.logo=l?l[1].trim():''; R.bimi.vmc=a?a[1].trim():''; }
+  // SRV + platform records
+  R.srv=[]; await Promise.all(SRVS.map(async s=>{ const r=await dns.q(`${s}.${domain}`,'SRV'); recs(r,'SRV').forEach(x=>R.srv.push({name:`${s}.${domain}`, data:x.data, ttl:x.ttl})); }));
+  // Web hosting / proxy
+  const apex={host:domain, chain:recs(rA,'CNAME').map(x=>stripDot(x.data)), v4:recs(rA,'A').map(x=>x.data), v6:recs(rAAAA,'AAAA').map(x=>x.data)}; apex.ips=[...apex.v4,...apex.v6]; apex.status=rA.rcode;
+  const www=await resolveHost(dns,'www.'+domain);
+  await Promise.all([addPtrs(dns,apex), addPtrs(dns,www)]); classifyHost(apex); classifyHost(www);
+  R.web={apex, www};
+  // Wildcard + subdomain sweep
+  const wc=await resolveHost(dns, 'zz'+Math.random().toString(36).slice(2,9)+'.'+domain); R.wildcard = wc.ips.length? wc.ips : null;
+  R.subs=[];
+  if(opts.sweep){
+    const hs=await Promise.all(SUBS.filter(s=>s!=='www').map(s=>resolveHost(dns,`${s}.${domain}`)));
+    const live=hs.filter(h=>h.ips.length||h.chain.length);
+    await Promise.all(live.map(h=>addPtrs(dns,h,1))); live.forEach(classifyHost);
+    if(R.wildcard) live.forEach(h=>{ h.maybeWildcard = h.ips.length && h.ips.every(ip=>R.wildcard.includes(ip)); });
+    R.subs=live;
+  }
+  // Origin exposure
+  const isProxied = !!(apex.proxy||www.proxy); R.web.proxied=isProxied; R.web.proxyName=apex.proxy||www.proxy||null;
+  if(isProxied){
+    const cand=[...R.subs, ...realMx.filter(m=>m.host.endsWith('.'+domain) && !m.provider).map(m=>m.res).filter(Boolean)];
+    const known=/Microsoft|Google|Proofpoint|Mimecast|Barracuda|Cisco|Zoho|Proton|iCloud|Rackspace|Sophos|Trend|Hornet|Zix|GoDaddy Email|Intune|Teams|Autodiscover/;
+    R.web.exposed = cand.filter(h=>h && h.ips.length && !h.proxy && !h.maybeWildcard && !h.tags.some(t=>known.test(t.name)) && !(h.chain.length && matchHint(MX_PROVIDERS,h.chain[h.chain.length-1])))
+      .map(h=>({host:h.host, ips:h.ips, tags:h.tags.map(t=>t.name)}));
+    const seen=new Set(); R.web.exposed=R.web.exposed.filter(e=>!seen.has(e.host)&&seen.add(e.host));
+  } else R.web.exposed=[];
+  if(opts.rdap){ const why=guardCheck(R.org); if(why){ R.rdap={error:'blocked by privacy guard'}; dns.blocked.push({target:R.org, service:'RDAP', why}); } else R.rdap=await rdap(R.org); }
+  if(opts.speed){ const hosts=[apex.ips.length?domain:null, www.ips.length?'www.'+domain:null].filter(Boolean); R.speed=[];
+    for(const h of hosts) R.speed.push(await httpTiming(h)); if(R.speed.length) saveSpeed(domain,R.speed); }
+  if(opts.gp && opts.gp.on){ const tgt = apex.ips.length? domain : (www.ips.length? 'www.'+domain : domain); R.regional=await regionalRun(tgt, opts.gp); saveRegional(domain, R.regional); }
+  R.dns=dns; R.log=dns.log;
+  R.blocked=[...dns.blocked, ...((R.regional&&R.regional.blocked)||[]), ...(R.speed||[]).filter(t=>t.blockedWhy).map(t=>({target:t.host, service:'Browser timing', why:t.blockedWhy}))];
+  { const seen=new Set(); R.blocked=R.blocked.filter(b=>{ const k=b.target+b.service; return !seen.has(k)&&seen.add(k); }); }
+  R.internalIps=[]; for(const r of dns.log) for(const a of r.answers) if((a.type==='A'||a.type==='AAAA') && isPrivateIp(a.data)) R.internalIps.push({host:a.name, ip:a.data});
+  { const seen=new Set(); R.internalIps=R.internalIps.filter(x=>{ const k=x.host+x.ip; return !seen.has(k)&&seen.add(k); }); }
+  grade(R);
+  return R;
+}
+
+/* ============================== Grading ============================== */
+function grade(R){
+  const F=[]; const add=(sev,area,title,fix,detail)=>F.push({sev,area,title,fix:fix||'',detail:detail||''});
+  const S={spf:0,dmarc:0,dkim:0,infra:0}; const D=R.domain;
+  if(!R.exists){ add('fail','Domain',`${D} does not exist (NXDOMAIN)`,'Check spelling or registration status.'); R.findings=F; R.score=0; R.grade='F'; R.parts=S; R.suggest=[]; return; }
+  R.servfail.length && add('fail','DNS',`SERVFAIL on ${R.servfail.join(', ')} queries`,'Usually broken DNSSEC or unreachable nameservers. Check DS/DNSKEY at the registrar and nameserver health.');
+  R.queryErrors.length && add('warn','DNS','Some queries failed from this browser',`Retry, or switch resolver. (${R.queryErrors.join('; ')})`);
+  const mxProv=R.mail.providers||[]; const m365=mxProv.includes('Microsoft 365'), gws=mxProv.includes('Google Workspace');
+  const services=[...R.spf.ctx.services]; const sends = !!R.spf.root.record ? !/^v=spf1\s+-all\s*$/i.test(R.spf.root.record) : (R.mail.mx.length>0 && !R.mail.nullMx);
+  const parked = (R.mail.nullMx || !R.mail.mx.length) && !services.length;
+  R.suggest=[];
+
+  /* ---- SPF (25) ---- */
+  const sp=R.spf, root=sp.root, c=sp.ctx;
+  if(!root.record){
+    add('fail','SPF','No SPF record', parked? 'Publish <code>v=spf1 -all</code> so nobody can send as this domain.' : 'Publish one SPF TXT record at the root listing every service that sends as this domain.');
+  } else {
+    S.spf+=8;
+    if(root.records.length>1) add('fail','SPF',`${root.records.length} SPF records at the root`,'Merge into a single <code>v=spf1</code> record — multiple records = PermError (SPF fails everywhere).'); else S.spf+=3;
+    if(c.lookups>10) add('fail','SPF',`${c.lookups} DNS lookups — over the limit of 10`,'Remove unused includes, swap includes for ip4/ip6 where vendors allow, or use a subdomain for bulk senders. Over 10 = PermError.');
+    else { S.spf+=6; if(c.lookups>=8) add('warn','SPF',`${c.lookups}/10 DNS lookups used`,'Close to the limit — adding one more vendor could break SPF. Audit includes now.'); else add('pass','SPF',`${c.lookups}/10 DNS lookups`); }
+    if(c.voids>2) add('fail','SPF',`${c.voids} void lookups (limit 2)`,'Remove mechanisms pointing at names with no records.');
+    const q=root.effAll;
+    if(q==='-'){ S.spf+=8; add('pass','SPF','Ends in -all (hard fail)'); }
+    else if(q==='~'){ S.spf+=7; add('pass','SPF','Ends in ~all (soft fail)','Fine when DMARC is at quarantine/reject. Move to <code>-all</code> once all senders are confirmed.'); }
+    else if(q==='?'){ S.spf+=2; add('warn','SPF','Ends in ?all (neutral) — no protection','Change to <code>~all</code> or <code>-all</code>.'); }
+    else if(q==='+'){ add('fail','SPF','Ends in +all — anyone on the internet may send as this domain','Replace <code>+all</code> with <code>~all</code> or <code>-all</code> immediately.'); }
+    else { S.spf+=2; add('warn','SPF','No "all" mechanism — defaults to neutral','Append <code>~all</code> or <code>-all</code>.'); }
+    const errs=c.errors.filter(e=>!/multiple SPF|PermError\. Merge/.test(e) || root.records.length<=1);
+    errs.forEach(e=>add('fail','SPF',e.replace(/</g,'&lt;'))); S.spf=Math.max(0,S.spf-3*errs.length);
+    c.warnings.forEach(w=>add('warn','SPF',esc(w)));
+    if(m365 && !c.includes.some(i=>/spf\.protection\.outlook\.com$/i.test(i))) add('warn','SPF','MX is Microsoft 365 but SPF lacks include:spf.protection.outlook.com','Add <code>include:spf.protection.outlook.com</code> unless all outbound relays through a gateway listed elsewhere.');
+    if(gws && !c.includes.some(i=>/_spf\.google\.com$/i.test(i))) add('warn','SPF','MX is Google Workspace but SPF lacks include:_spf.google.com','Add <code>include:_spf.google.com</code>.');
+  }
+  // SPF suggestion
+  if(!root.record || root.records.length>1 || ['+','?',null,undefined].includes(root.effAll) && root.record){
+    let inc=[]; if(m365) inc.push('include:spf.protection.outlook.com'); if(gws) inc.push('include:_spf.google.com');
+    if(root.record) inc=[...new Set([...inc, ...c.includes.map(i=>'include:'+i)])];
+    R.suggest.push({label:'SPF (TXT @)', value: parked||(!inc.length&&!root.record&&!R.mail.mx.length) ? 'v=spf1 -all' : `v=spf1 ${inc.join(' ')}${inc.length?' ':''}~all`, note: inc.length||parked?'':'Add include:/ip4: entries for each service that sends mail as this domain.'});
+  }
+
+  /* ---- DMARC (35) ---- */
+  const dm=R.dmarc;
+  if(!dm.found){ add('fail','DMARC','No DMARC record','Publish a DMARC record at <code>_dmarc.'+D+'</code>. Start at p=none with reporting, then move to quarantine → reject.');
+    R.suggest.push({label:`DMARC (TXT _dmarc.${D})`, value: parked? 'v=DMARC1; p=reject; adkim=s; aspf=s;' : `v=DMARC1; p=none; rua=mailto:dmarc-reports@${R.org}; fo=1;`, note: parked?'Parked/non-sending domain — lock it down.':'Replace the rua address with your DMARC reporting mailbox/service.'}); }
+  else {
+    S.dmarc+=8; dm.errors.forEach(e=>add('fail','DMARC',esc(e))); dm.warnings.forEach(w=>add('warn','DMARC',esc(w)));
+    if(dm.errors.length) S.dmarc=Math.max(0,S.dmarc-4*dm.errors.length);
+    if(dm.inherited) add('info','DMARC',`Inherited from organizational domain ${dm.source}`,`Subdomain policy (sp=) applies: <b>${esc(dm.effective)}</b>.`);
+    const p=dm.effective; const pts={reject:17,quarantine:12,none:3};
+    if(p!=='none' && dm.pct===0){ S.dmarc+=3; add('warn','DMARC',`p=${esc(p)} with pct=0 — effectively monitoring only`,`pct=0 means receivers apply the policy to 0% of failing mail (treated like p=none). Raise pct (e.g. 25 → 50 → 100) or remove it once reports are clean.`); }
+    else if(p!=='none' && dm.pct<100){ S.dmarc+=Math.round(3+(pts[p]-3)*dm.pct/100); add('warn','DMARC',`Policy p=${esc(p)} at pct=${dm.pct}`,`Only ${dm.pct}% of failing mail gets ${esc(p)}; the rest is treated one level weaker. Ramp pct to 100.`); }
+    else if(p==='reject'){ S.dmarc+=17; add('pass','DMARC','Policy p=reject — spoofed mail is rejected'); }
+    else if(p==='quarantine'){ S.dmarc+=12; add('warn','DMARC','Policy p=quarantine','Good. Once reports show all legitimate senders aligned, move to <code>p=reject</code>.'); }
+    else if(p==='none'){ S.dmarc+=3; add('warn','DMARC','Policy p=none — monitoring only, no protection', dm.rua.length?'Review aggregate reports, fix unaligned senders, then move to <code>p=quarantine</code>.':'Add a rua= reporting address first, then move to <code>p=quarantine</code>.'); }
+    if(p && p!=='none' && dm.pct>=100) S.dmarc+=4;
+    if(dm.rua.filter(u=>!u.bad).length){ S.dmarc+=6; add('pass','DMARC',`Aggregate reports go to ${dm.rua.filter(u=>!u.bad).map(u=>esc(u.addr)).join(', ')}`); }
+    else add('warn','DMARC','No aggregate reporting (rua=)',`Add <code>rua=mailto:dmarc-reports@${R.org}</code> (or your DMARC service) — without reports you can't safely enforce.`);
+    if(!dm.inherited && dm.tags.sp){ const rank={none:0,quarantine:1,reject:2}; if(rank[dm.sp]<rank[dm.p]) add('warn','DMARC',`Subdomain policy sp=${esc(dm.sp)} is weaker than p=${esc(dm.p)}`,'Attackers can spoof any subdomain. Raise sp= to match p= unless subdomains are still being onboarded.'); }
+    if(dm.ruf.length) add('info','DMARC','Forensic (ruf=) reports requested','Few receivers send these and they may contain PII; keep only if you process them.');
+    if(!dm.inherited && (p==='none'||p==='quarantine'||dm.pct<100)){ const next = dm.pct<100 ? p : (p==='none'?'quarantine':'reject'); const rank={none:0,quarantine:1,reject:2};
+      const t=Object.entries(dm.tags).filter(([k,v])=>!['v','p','pct'].includes(k) && !(k==='sp' && rank[v.toLowerCase()]<rank[next])).map(([k,v])=>`${k}=${v}`);
+      if(!dm.rua.filter(u=>!u.bad).length) t.push(`rua=mailto:dmarc-reports@${R.org}`);
+      R.suggest.push({label:`DMARC next step (TXT _dmarc.${dm.source})`, value:['v=DMARC1','p='+next,...t].join('; ')+';', note: dm.pct<100?'Ramp to 100% at the current policy before tightening further.':'Only after reports confirm legitimate mail passes SPF or DKIM in alignment.'}); }
+  }
+
+  /* ---- DKIM (25) ---- */
+  const dk=R.dkim, good=dk.keys.filter(k=>k.record && !k.error && !k.revoked);
+  if(dk.wildcard) add('warn','DKIM','Wildcard TXT under _domainkey — selector results unreliable','Remove the wildcard record; it makes every selector appear valid.');
+  if(good.length){ S.dkim+=15; add('pass','DKIM',`${good.length} DKIM key${good.length>1?'s':''} found: ${good.map(k=>esc(k.selector)).join(', ')}`);
+    const weak=good.filter(k=>k.k==='rsa' && k.bits && k.bits<2048);
+    if(weak.length){ S.dkim+=2; weak.forEach(k=>add(k.bits<1024?'fail':'warn','DKIM',`Selector ${esc(k.selector)} uses a ${k.bits}-bit RSA key`, k.bits<1024?'Keys under 1024 bits are rejected by major receivers — rotate to 2048-bit now.':'Rotate to a 2048-bit key (M365: Defender → DKIM → Rotate; Google: Admin → Gmail → Authenticate email).')); }
+    else S.dkim+=6;
+    good.filter(k=>k.testing).forEach(k=>add('warn','DKIM',`Selector ${esc(k.selector)} has t=y (testing mode)`,'Remove t=y once signing is confirmed; some receivers ignore test-mode results.'));
+  } else add('warn','DKIM',`No DKIM key found among ${dk.probed} common selectors`,'Not proof DKIM is missing. Check a sent message header for <code>DKIM-Signature: … s=&lt;selector&gt;</code> and re-run with that selector.');
+  dk.keys.filter(k=>k.revoked).forEach(k=>add('info','DKIM',`Selector ${esc(k.selector)} is revoked (empty p=)`));
+  dk.keys.filter(k=>k.error).forEach(k=>add('fail','DKIM',`Selector ${esc(k.selector)}: ${esc(k.error)}`,'Republish the key exactly as the provider supplies it.'));
+  dk.keys.filter(k=>k.danglingCname).forEach(k=>add('warn','DKIM',`Selector ${esc(k.selector)} CNAMEs to ${esc(k.cname.at(-1))} but no key exists there`, /onmicrosoft/.test(k.cname.join())?'Microsoft 365 DKIM signing likely not enabled — turn it on in Defender → Email authentication → DKIM.':'Finish enabling DKIM at the provider, or remove the stale CNAME.'));
+  let mismatch=false;
+  if(m365 && !dk.keys.some(k=>/^selector[12]$/.test(k.selector) && k.record)){ mismatch=true; add('warn','DKIM','Microsoft 365 mail without selector1/selector2 keys','Publish the two CNAMEs from Defender → DKIM and enable signing; otherwise M365 signs as onmicrosoft.com (no DMARC alignment).'); }
+  if(gws && !dk.keys.some(k=>/^google/.test(k.selector) && k.record)){ mismatch=true; add('warn','DKIM','Google Workspace mail without a google._domainkey key','Admin console → Apps → Gmail → Authenticate email → Generate 2048-bit key, publish, then Start authentication.'); }
+  if(good.length && !mismatch) S.dkim+=4;
+
+  /* ---- Infra (15) ---- */
+  const ds=R.dnssec.state;
+  if(ds==='validated'){ S.infra+=3; add('pass','DNSSEC','DNSSEC signed and validating'); }
+  else if(ds==='broken') add('fail','DNSSEC','DNSSEC appears broken (DS present, validation failing)','Remove the DS record at the registrar or fix the zone signing — validating resolvers may fail to resolve this domain.');
+  else if(ds.startsWith('signed')) { S.infra+=2; add('info','DNSSEC','DS record present, AD flag not set by resolver'); }
+  else add('info','DNSSEC','DNSSEC not enabled','Optional hardening — enable at your DNS host, then publish the DS at the registrar.');
+  if(R.caa.length){ S.infra+=2; add('pass','CAA',`CAA restricts certificate issuance (${R.caa.length} record${R.caa.length>1?'s':''})`); }
+  else add('info','CAA','No CAA record — any CA may issue certificates','Add CAA records for the CAs you use (e.g. <code>0 issue "letsencrypt.org"</code>). Include your CDN\'s CAs if proxied.');
+  if(R.mail.nullMx){ S.infra+=10; add('pass','MX','Null MX (0 .) — domain explicitly receives no mail'); }
+  else if(!R.mail.mx.length){ add(parked?'warn':'info','MX','No MX records', parked?'Non-mail domain: publish a null MX (<code>0 .</code>) plus <code>v=spf1 -all</code> and DMARC p=reject.':'Mail falls back to the A record. Add MX or a null MX.');
+    if(parked) R.suggest.push({label:'Null MX (MX @)', value:'0 .', note:'Declares the domain receives no email (RFC 7505).'}); }
+  else {
+    let mxOk=true;
+    R.mail.mx.forEach(m=>{ const h=m.res; if(!h) return;
+      if(/^\d+\.\d+\.\d+\.\d+$/.test(m.host)){ mxOk=false; add('fail','MX',`MX ${esc(m.host)} is an IP address`,'MX must point to a hostname with an A record.'); }
+      else if(!h.ips.length){ mxOk=false; add('fail','MX',`MX ${esc(m.host)} doesn't resolve`,'Fix or remove this MX — senders will defer/bounce.'); }
+      if(h.chain.length) add('warn','MX',`MX ${esc(m.host)} is a CNAME (RFC 2181 violation)`,'Point MX directly at the A-record hostname.');
+      if(h.proxy) { mxOk=false; add('fail','MX',`MX ${esc(m.host)} resolves to ${esc(h.proxy)} proxy IPs`,'Proxies don\'t carry SMTP. Set this hostname to DNS-only (grey cloud) or point MX at the real mail host.'); }
+    });
+    if(mxOk){ S.infra+=3; add('pass','MX',`${R.mail.mx.length} MX record${R.mail.mx.length>1?'s':''} → ${esc(mxProv.join(', '))}`); }
+    if(R.mtasts.record && R.mtasts.hostResolves){ S.infra+=4; add('pass','MTA-STS','MTA-STS TXT published and mta-sts host resolves',`Confirm the policy file loads: <a href="${esc(R.mtasts.policyUrl)}" target="_blank" rel="noopener">${esc(R.mtasts.policyUrl)}</a>`); }
+    else if(R.mtasts.record){ S.infra+=1; add('warn','MTA-STS','MTA-STS TXT exists but mta-sts.'+esc(D)+' does not resolve','Publish the policy at mta-sts.'+esc(D)+' over HTTPS or remove the TXT.'); }
+    else { add('info','MTA-STS','No MTA-STS','Enforces TLS for inbound mail. Microsoft 365 / Google both support it.'); R.suggest.push({label:`MTA-STS (TXT _mta-sts.${D})`, value:`v=STSv1; id=${new Date().toISOString().slice(0,10).replace(/-/g,'')}01;`, note:`Also host the policy at https://mta-sts.${D}/.well-known/mta-sts.txt (start with mode: testing).`}); }
+    if(R.tlsrpt.record){ S.infra+=2; add('pass','TLS-RPT','TLS reporting enabled'); }
+    else { add('info','TLS-RPT','No TLS-RPT','Receive reports on inbound TLS failures.'); R.suggest.push({label:`TLS-RPT (TXT _smtp._tls.${D})`, value:`v=TLSRPTv1; rua=mailto:tlsrpt@${R.org}`, note:''}); }
+  }
+  if(R.mail.nullMx || !R.mail.mx.length){ /* mail infra points already granted above for null MX */ }
+  if(R.bimi.record){ add(dm.effective==='quarantine'||dm.effective==='reject'?'pass':'warn','BIMI','BIMI record published', dm.effective==='none'?'BIMI requires DMARC quarantine/reject to display.':''); }
+  /* ---- Hosting & DNS ---- */
+  if(R.ns.length===1) add('warn','DNS','Only one nameserver','Use at least two nameservers on separate networks.');
+  if(R.web.proxied) add('info','Proxy',`Website is proxied through ${esc(R.web.proxyName)}`);
+  if(R.web.exposed.length) add('warn','Proxy',`${R.web.exposed.length} host${R.web.exposed.length>1?'s':''} bypass the proxy: ${R.web.exposed.map(e=>esc(e.host)).join(', ')}`,'If any share the web server, the origin IP is exposed and the WAF can be bypassed. Proxy them, move them, or firewall the origin to proxy IPs only.');
+  if(R.wildcard) add('info','DNS',`Wildcard DNS (*.${esc(D)}) → ${esc(R.wildcard.join(', '))}`,'Any subdomain resolves — subdomain sweep results flagged where they match the wildcard.');
+  if(R.rdap && !R.rdap.error && R.rdap.expires){ const days=Math.round((new Date(R.rdap.expires)-Date.now())/864e5); R.rdap.days=days;
+    if(days<0) add('fail','Registration',`Domain registration expired ${-days} days ago`,'Renew immediately.');
+    else if(days<30) add('warn','Registration',`Registration expires in ${days} days`,'Renew and enable auto-renew.');
+    if(!R.rdap.status.some(s=>/transfer prohibited/i.test(s))) add('warn','Registration','No transfer lock (clientTransferProhibited)','Enable registrar lock to prevent hijacking.'); }
+
+  (R.speed||[]).forEach(t=>{ if(!t.samples.length) add('warn','Speed',`${esc(t.host)} didn't answer over HTTPS from this browser`,'Site down, HTTPS not offered, or blocked by your network/extensions.');
+    else { if(t.loss) add('warn','Speed',`${esc(t.host)}: ${t.loss}% of HTTPS probes failed`,'Intermittent reachability — re-test, and check hosting/WAF rate limits.');
+      if(t.warmMedian!=null && t.warmMedian>800) add('warn','Speed',`${esc(t.host)} is slow — ${t.warmMedian} ms median response`,'Check hosting load, geographic distance, or put a CDN in front.');
+      else add('info','Speed',`${esc(t.host)}: ${t.cold} ms first connect, ${t.warmMedian??'—'} ms median after`); } });
+  if(R.regional){ const rg=R.regional; rg.errors.forEach(e=>add('warn','Regional',`Regional test: ${esc(e)}`));
+    const slow=rg.rows.filter(r=>r.http?.total>1500); if(slow.length) add('warn','Regional',`Slow HTTPS from ${slow.map(r=>esc(r.where)).join('; ')}`,'Consider a CDN or hosting closer to those users.');
+    const down=rg.rows.filter(r=>r.http && r.http.status!=='finished'); if(down.length) add('warn','Regional',`HTTPS failed from ${down.length} probe${down.length>1?'s':''}`,'Check geo-blocking/WAF rules or regional outages.');
+    rg.extra.filter(r=>r.loss===100).forEach(r=>add('info','Regional',`${esc(r.target)} doesn't answer ping from ${esc(r.where)}`,'Normal if ICMP is blocked on the firewall.')); }
+  if((R.internalIps||[]).length) add('warn','DNS',`Public DNS exposes ${R.internalIps.length} internal/private IP${R.internalIps.length>1?'s':''}: ${R.internalIps.slice(0,5).map(x=>esc(x.host)+' → '+esc(x.ip)).join(', ')}${R.internalIps.length>5?' …':''}`,'Leaks internal addressing to anyone. Move these records to internal (split-horizon) DNS.');
+  if((R.blocked||[]).length) add('info','Privacy',`Privacy guard withheld ${R.blocked.length} item${R.blocked.length>1?'s':''} from outside services`, R.blocked.slice(0,6).map(b=>`${esc(b.target)} → ${esc(b.service)} (${esc(b.why)})`).join('; ')+(R.blocked.length>6?' …':''));
+  const total=S.spf+S.dmarc+S.dkim+Math.min(15,S.infra);
+  R.parts={spf:Math.min(25,S.spf), dmarc:Math.min(35,S.dmarc), dkim:Math.min(25,S.dkim), infra:Math.min(15,S.infra)};
+  R.score=Math.min(100, R.parts.spf+R.parts.dmarc+R.parts.dkim+R.parts.infra);
+  if(parked && R.spf.root.effAll==='-' && dm.effective==='reject') R.score=Math.max(R.score, 90);
+  R.grade = R.score>=90?'A':R.score>=80?'B':R.score>=65?'C':R.score>=50?'D':'F';
+  const ord={fail:0,warn:1,info:2,pass:3}; F.sort((a,b)=>ord[a.sev]-ord[b.sev]); R.findings=F; R.parked=parked;
+}
+
+/* ============================== Rendering ============================== */
+let RESULTS=[], CUR=0, TAB='findings';
+const gradeCls = g => g==='A'?'pass':g==='B'?'info':g==='C'||g==='D'?'warn':'fail';
+const pill = (cls,t) => `<span class="pill ${cls}">${t}</span>`;
+function spfPill(R){ const r=R.spf.root; if(!r.record) return pill('fail','missing'); if(R.spf.ctx.errors.length) return pill('fail','errors'); const q=r.effAll; return pill(q==='-'||q==='~'?'pass':q==='+'?'fail':'warn', esc((q||'?')+'all')+' · '+R.spf.ctx.lookups+'/10'); }
+function dmarcPill(R){ const d=R.dmarc; if(!d.found) return pill('fail','missing'); if(d.errors.length) return pill('fail','invalid'); const p=d.effective; const cls= d.pct===0||p==='none' ? 'warn' : d.pct<100 ? 'warn' : p==='reject'?'pass':'info'; return pill(cls,'p='+esc(p)+(d.pct<100?` ${d.pct}%`:'')+(d.pct===0&&p!=='none'?' (monitor only)':'')); }
+function dkimPill(R){ const g=R.dkim.keys.filter(k=>k.record&&!k.error&&!k.revoked); return g.length? pill(g.some(k=>k.bits&&k.bits<2048)?'warn':'pass', g.length+' key'+(g.length>1?'s':'')) : pill('warn','not found'); }
+
+function renderSummary(){
+  const el=$('#summary'); if(RESULTS.length<2){ el.innerHTML=''; return; }
+  el.innerHTML=`<div class="card"><div class="row" style="justify-content:space-between"><h2>Summary — ${RESULTS.length} domains</h2>
+   <div class="row noprint"><button class="sm" id="copyCsv">Copy CSV</button><button class="sm" id="dlCsv">Download CSV</button></div></div>
+   <table><thead><tr><th>Domain</th><th>Grade</th><th>SPF</th><th>DKIM</th><th>DMARC</th><th>Mail</th><th>DNS host</th><th>Web / proxy</th><th>HTTPS ms</th><th>Regional ping / HTTPS</th><th>Issues</th></tr></thead><tbody>
+   ${RESULTS.map((R,i)=>R.err?`<tr><td>${esc(R.domain)}</td><td colspan="10">${pill('fail','error')} ${esc(R.err)}</td></tr>`:`<tr class="click ${i===CUR?'sel':''}" data-i="${i}">
+     <td><b>${esc(R.domain)}</b></td><td>${pill(gradeCls(R.grade),R.grade+' · '+R.score)}</td><td>${spfPill(R)}</td><td>${dkimPill(R)}</td><td>${dmarcPill(R)}</td>
+     <td>${esc((R.mail.providers||[]).join(', ')|| (R.mail.nullMx?'Null MX':'—'))}</td><td>${esc(R.dnsHost.join(', '))}</td>
+     <td>${R.web.proxied?pill('info',esc(R.web.proxyName)):esc((R.web.apex.tags[0]||R.web.www.tags[0]||{}).name||(R.web.apex.ips.length?'Direct':'—'))}</td>
+     <td>${(R.speed||[])[0]?.warmMedian??'—'}</td><td>${R.regional?`${R.regional.pingAvg??'—'} / ${R.regional.httpAvg??'—'}`:'—'}</td>
+     <td>${R.findings.filter(f=>f.sev==='fail').length?pill('fail',R.findings.filter(f=>f.sev==='fail').length+' fail'):''} ${R.findings.filter(f=>f.sev==='warn').length?pill('warn',R.findings.filter(f=>f.sev==='warn').length+' warn'):''}</td></tr>`).join('')}
+   </tbody></table></div>`;
+  el.querySelectorAll('tr.click').forEach(tr=>tr.onclick=()=>{ CUR=+tr.dataset.i; renderSummary(); renderDetail(); });
+  $('#copyCsv').onclick=()=>copyText(csv()); $('#dlCsv').onclick=()=>download('ratatoskr-summary.csv',csv(),'text/csv');
+}
+function csv(){
+  const q=csvCell;
+  const rows=[['Domain','Grade','Score','SPF','SPF lookups','DKIM selectors','DMARC policy','DMARC rua','Mail provider','DNS host','Proxy','HTTPS first ms','HTTPS warm ms','Regional ping avg ms','Regional HTTPS avg ms','Fails','Warnings']];
+  RESULTS.filter(R=>!R.err).forEach(R=>rows.push([R.domain,R.grade,R.score,R.spf.root.record||'MISSING',R.spf.ctx.lookups,R.dkim.keys.filter(k=>k.record).map(k=>k.selector).join(' '),R.dmarc.found?R.dmarc.effective:'MISSING',R.dmarc.rua.map(u=>u.addr).join(' '),(R.mail.providers||[]).join(' / '),R.dnsHost.join(' / '),R.web.proxyName||'',(R.speed||[])[0]?.cold??'',(R.speed||[])[0]?.warmMedian??'',R.regional?.pingAvg??'',R.regional?.httpAvg??'',R.findings.filter(f=>f.sev==='fail').length,R.findings.filter(f=>f.sev==='warn').length]));
+  return rows.map(r=>r.map(q).join(',')).join('\n');
+}
+
+const TABS=[['findings','Findings'],['spf','SPF'],['dkim','DKIM'],['dmarc','DMARC'],['mail','Mail & MX'],['web','Hosting & Proxy'],['speed','Speed & regions'],['records','All DNS records'],['log','Query log']];
+function renderDetail(){
+  const R=RESULTS[CUR]; const el=$('#detail');
+  if(!R){ el.innerHTML='<div class="card empty">Enter a domain and run checks.</div>'; return; }
+  if(R.err){ el.innerHTML=`<div class="card">${pill('fail','Error')} ${esc(R.domain)}: ${esc(R.err)}</div>`; return; }
+  const P=R.parts;
+  el.innerHTML=`<div class="card">
+   <div class="dhead">
+     <div class="gradebox ${gradeCls(R.grade)}">${R.grade}</div>
+     <div style="flex:1;min-width:240px"><h2>${esc(R.domain)}</h2>
+       <div class="muted" style="font-size:12px">Score ${R.score}/100 · ${esc(R.resolver)} DoH · ${R.log.length} queries · ${new Date(R.at).toLocaleString()}</div>
+       <div class="chips">SPF ${spfPill(R)} DKIM ${dkimPill(R)} DMARC ${dmarcPill(R)} DNSSEC ${pill(R.dnssec.state==='validated'?'pass':R.dnssec.state==='broken'?'fail':'info',esc(R.dnssec.state))} ${R.web.proxied?'Proxy '+pill('info',esc(R.web.proxyName)):''}</div>
+     </div>
+     <div class="grid noprint" style="grid-template-columns:repeat(2,auto);gap:6px">
+       <button class="sm" id="cpMd">Copy report</button><button class="sm" id="dlMd">Download .md</button>
+       <button class="sm" id="dlJson">Download JSON</button><button class="sm" id="prt">Print / PDF</button>
+     </div>
+   </div>
+   <div class="grid" style="grid-template-columns:repeat(4,1fr);gap:14px;margin-top:14px">
+     ${[['SPF',P.spf,25],['DMARC',P.dmarc,35],['DKIM',P.dkim,25],['Transport & DNS',P.infra,15]].map(([n,v,m])=>`<div><div class="row" style="justify-content:space-between;font-size:12px"><span class="muted">${n}</span><b>${v}/${m}</b></div><div class="bar"><i style="width:${v/m*100}%"></i></div></div>`).join('')}
+   </div>
+   <div class="tabs">${TABS.map(([k,n])=>`<button data-t="${k}" class="${TAB===k?'on':''}">${n}${k==='findings'?(()=>{const nf=R.findings.filter(f=>f.sev==='fail').length, nw=R.findings.filter(f=>f.sev==='warn').length; return nf?` <span class="pill fail">${nf}</span>`:nw?` <span class="pill warn">${nw}</span>`:'';})():''}</button>`).join('')}</div>
+   <div id="pane"></div></div>`;
+  el.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ TAB=b.dataset.t; store.set('tab',TAB); renderDetail(); });
+  $('#cpMd').onclick=()=>copyText(markdown(R)); $('#dlMd').onclick=()=>download(`${R.domain}-mail-dns-report.md`,markdown(R),'text/markdown');
+  $('#dlJson').onclick=()=>download(`${R.domain}-mail-dns.json`,JSON.stringify(serial(R),null,2),'application/json');
+  $('#prt').onclick=()=>{ try{ window.print(); }catch(e){ toast('Printing blocked here — use Download .md'); } };
+  $('#pane').innerHTML = ({speed:R=>paneSpeed(R)+paneRegional(R), findings:paneFindings, spf:paneSpf, dkim:paneDkim, dmarc:paneDmarc, mail:paneMail, web:paneWeb, records:paneRecords, log:paneLog})[TAB](R);
+  $('#pane').querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copyText(b.dataset.copy));
+  const rr=$('#dlRHist'); if(rr) rr.onclick=()=>download(`${R.domain}-regional-history.csv`,rhistCsv(R.domain),'text/csv');
+  const gn=$('#gpRunNow'); if(gn) gn.onclick=async()=>{ gn.disabled=true; gn.textContent='Running… (up to ~1 min)';
+    const tgt = R.web.apex.ips.length? R.domain : (R.web.www.ips.length? 'www.'+R.domain : R.domain);
+    R.regional=await regionalRun(tgt, gpSettings()); saveRegional(R.domain,R.regional);
+    (R.regional.blocked||[]).forEach(b=>{ if(!R.blocked.some(x=>x.target===b.target&&x.service===b.service)) R.blocked.push(b); }); grade(R); renderSummary(); renderDetail(); };
+  const dh=$('#dlHist'); if(dh) dh.onclick=()=>download(`${R.domain}-timing-history.csv`,histCsv(R.domain),'text/csv');
+  if(TAB==='records'){ const f=$('#recFilter'), e=$('#recEmpty'); const upd=()=>{ $('#recBody').innerHTML=recordRows(R,f.value,e.checked); }; f.oninput=upd; e.onchange=upd; }
+}
+const recBox = (v,label) => `<div class="rec"><div class="mono">${label?`<div class="muted" style="font-family:system-ui;font-size:11px">${esc(label)}</div>`:''}${esc(v)}</div><button class="sm noprint" data-copy="${esc(v)}">Copy</button></div>`;
+
+function paneFindings(R){
+  const sev={fail:'Fail',warn:'Warn',info:'Info',pass:'Pass'};
+  return `${R.parked?`<div class="rec"><div>${pill('info','Parked domain')} No mail services detected. Lock it down: <code>v=spf1 -all</code>, DMARC <code>p=reject</code>, null MX.</div></div>`:''}
+  ${R.findings.map(f=>`<div class="find"><div>${pill(f.sev,sev[f.sev])}<div class="muted" style="font-size:11px;margin-top:4px">${esc(f.area)}</div></div>
+    <div><div class="t">${f.title}</div>${f.fix?`<div class="fix"><b>→</b> ${f.fix}</div>`:''}${f.detail?`<div class="note">${f.detail}</div>`:''}</div></div>`).join('')}
+  ${R.suggest.length?`<h3>Suggested records</h3>${R.suggest.map(s=>recBox(s.value,s.label)+(s.note?`<div class="note" style="margin:-2px 0 8px">${esc(s.note)}</div>`:'')).join('')}`:''}`;
+}
+function spfTree(n){
+  const term=t=>{ let cls='term'; if(t.lookup) cls+=' lk'; if(t.error) cls+=' bad'; if(t.name==='all') cls+= t.q==='-'?' q-': t.q==='+'?' qp':'';
+    const tip=[t.error,t.warn,t.note, t.ips&&t.ips.length?'→ '+t.ips.slice(0,8).join(', ')+(t.ips.length>8?' …':''):'', t.mxHosts?'MX: '+t.mxHosts.join(', '):''].filter(Boolean).join(' · ');
+    return `<span class="${cls}" title="${esc(tip)}">${esc(t.raw)}</span>${tip&&(t.error||t.warn)?` <span class="note" style="color:${t.error?'var(--fail)':'var(--warn)'}">${esc(t.error||t.warn)}</span>`:''}`; };
+  return `<li class="node"><div class="nh"><b class="mono">${esc(n.domain)}</b> ${n.via!=='root'?pill('info',esc(n.via)):''} ${n.hint?pill('pass',esc(n.hint)):''} ${n.lookups?`<span class="muted" style="font-size:12px">${n.lookups} lookup${n.lookups>1?'s':''}</span>`:''} ${n.error?pill('fail',esc(n.error)):''}</div>
+   ${n.record?`<div style="margin-top:3px">${n.terms.map(term).join(' ')}</div>`:''}
+   ${n.children.length?`<ul class="tree">${n.children.map(spfTree).join('')}</ul>`:''}</li>`;
+}
+function paneSpf(R){
+  const s=R.spf, c=s.ctx, r=s.root;
+  return `<div class="two"><div>
+     <h3 style="margin-top:0">Record</h3>${r.records.length?r.records.map(x=>recBox(x)).join(''):`<p>${pill('fail','No SPF record')} at ${esc(R.domain)}</p>`}
+     ${r.chunks&&r.chunks.length>1?`<div class="note">Published as ${r.chunks.length} strings (${r.chunks.map(x=>x.length).join(' + ')} chars) — fine, receivers concatenate.</div>`:''}
+   </div><div><h3 style="margin-top:0">Totals</h3><div class="kv">
+     <div>DNS lookups</div><div><b style="color:${c.lookups>10?'var(--fail)':c.lookups>=8?'var(--warn)':'inherit'}">${c.lookups}</b> / 10</div>
+     <div>Void lookups</div><div>${c.voids} / 2</div><div>Effective "all"</div><div>${esc(r.effAll? r.effAll+'all':'none')}</div>
+     <div>IPv4 addresses authorized</div><div>${c.ip4count.toLocaleString()}</div><div>IPv6 ranges</div><div>${c.ip6n}</div>
+     <div>Senders detected</div><div>${[...c.services].map(x=>pill('pass',esc(x))).join(' ')||'—'}</div>
+     <div>Record length</div><div>${r.length||0} chars</div></div></div></div>
+   <h3>Include tree</h3><div class="note">Blue-bordered terms cost a DNS lookup. Hover a term for resolved IPs/notes.</div>
+   ${r.record?`<ul class="tree root">${spfTree(r)}</ul>`:'<p class="muted">—</p>'}`;
+}
+function paneDkim(R){
+  const d=R.dkim;
+  return `<p class="muted">Probed ${d.probed} selectors${d.wildcard?' — '+pill('warn','wildcard detected'):''}. Missing here ≠ missing DKIM: confirm the selector from a real message header.</p>
+   ${d.keys.length?`<table><thead><tr><th>Selector</th><th>Provider</th><th>Key</th><th>Flags</th><th>Record / CNAME</th></tr></thead><tbody>
+   ${d.keys.map(k=>`<tr><td class="mono"><b>${esc(k.selector)}</b></td><td>${esc(k.provider)}</td>
+     <td>${k.danglingCname?pill('warn','no key at target'):k.revoked?pill('info','revoked'):k.error?pill('fail',esc(k.error)):pill(k.bits&&k.bits<2048&&k.k==='rsa'?'warn':'pass',esc(k.k.toUpperCase())+' '+(k.bits?k.bits+'-bit':'?'))}</td>
+     <td>${k.testing?pill('warn','t=y testing'):''} ${k.strict?pill('info','t=s'):''}</td>
+     <td>${k.cname.length?`<div class="mono muted">CNAME → ${esc(k.cname.join(' → '))}</div>`:''}${k.record?`<details><summary>record</summary><div class="mono">${esc(k.record)}</div></details>`:''}</td></tr>`).join('')}</tbody></table>`:`<p>${pill('warn','No keys found')}</p>`}`;
+}
+function paneDmarc(R){
+  const d=R.dmarc; if(!d.found) return `<p>${pill('fail','No DMARC record')} at <code>_dmarc.${esc(R.domain)}</code>${R.domain!==R.org?` or <code>_dmarc.${esc(R.org)}</code>`:''}.</p>${d.errors.map(e=>`<p class="note">${esc(e)}</p>`).join('')}`;
+  const T=d.tags; const lbl={v:'Version',p:'Policy',sp:'Subdomain policy',np:'Non-existent subdomain policy',pct:'Percentage',rua:'Aggregate reports',ruf:'Forensic reports',adkim:'DKIM alignment',aspf:'SPF alignment',fo:'Failure options',rf:'Report format',ri:'Report interval (s)'};
+  return `${recBox(d.record, `_dmarc.${d.source}${d.inherited?' (inherited)':''}`)}
+   <div class="two"><div><h3>Tags</h3><div class="kv">${Object.entries(T).map(([k,v])=>`<div>${esc(lbl[k]||k)} <code>${esc(k)}</code></div><div class="mono">${esc(v)}</div>`).join('')}
+     ${T.adkim==null?'<div>DKIM alignment</div><div class="muted">r (relaxed, default)</div>':''}${T.aspf==null?'<div>SPF alignment</div><div class="muted">r (relaxed, default)</div>':''}${T.sp==null?`<div>Subdomain policy</div><div class="muted">inherits p=${esc(d.p)}</div>`:''}</div></div>
+   <div><h3>Report destinations</h3>${[...d.rua.map(u=>({...u,t:'rua'})),...d.ruf.map(u=>({...u,t:'ruf'}))].map(u=>`<div class="rec"><div>${pill('info',u.t)} <span class="mono">${esc(u.addr||u.uri)}</span>
+      ${u.bad?pill('fail','invalid'):u.internal?pill('pass','same org'):u.authorized?pill('pass','external · authorized'):pill('warn','external · not authorized')}</div></div>`).join('')||'<p class="muted">None</p>'}
+   ${d.other.length?`<h3>Other TXT at _dmarc</h3>${d.other.map(x=>recBox(x)).join('')}`:''}</div></div>`;
+}
+function paneMail(R){
+  const M=R.mail;
+  const plat=[['autodiscover','CNAME autodiscover.outlook.com (M365)'],['enterpriseenrollment','CNAME enterpriseenrollment.manage.microsoft.com (Intune)'],['enterpriseregistration','CNAME enterpriseregistration.windows.net (Entra)'],['lyncdiscover','CNAME webdir.online.lync.com (Teams/Skype legacy)'],['sip','CNAME sipdir.online.lync.com (legacy)']];
+  return `<h3 style="margin-top:0">MX records</h3>${M.nullMx?`<p>${pill('pass','Null MX')} domain accepts no mail.</p>`:M.mx.length?`<table><thead><tr><th>Pref</th><th>Host</th><th>Provider</th><th>Resolves to</th><th>PTR</th><th>TTL</th></tr></thead><tbody>
+   ${M.mx.map(m=>`<tr><td>${m.pref}</td><td class="mono">${esc(m.host)}${m.res&&m.res.chain.length?`<div class="muted">CNAME → ${esc(m.res.chain.join(' → '))}</div>`:''}</td><td>${esc(m.provider||'Unknown')}</td>
+     <td class="mono">${m.res?esc(m.res.ips.slice(0,4).join(', '))+(m.res.ips.length>4?' …':'')||pill('fail','no A/AAAA'):''}${m.res&&m.res.proxy?' '+pill('fail','proxied!'):''}</td><td class="mono muted">${esc((m.res?.ptrs||[]).join(', '))}</td><td>${m.ttl}</td></tr>`).join('')}</tbody></table>`:`<p>${pill('warn','No MX')}</p>`}
+   <div class="two"><div><h3>MTA-STS / TLS-RPT / BIMI</h3><div class="kv">
+     <div>MTA-STS TXT</div><div class="mono">${esc(R.mtasts.record||'—')}</div><div>mta-sts host</div><div>${R.mtasts.hostResolves?pill('pass','resolves'):pill('info','not found')} ${R.mtasts.record?`<a class="note" href="${esc(R.mtasts.policyUrl)}" target="_blank" rel="noopener">open policy</a>`:''}</div>
+     <div>TLS-RPT</div><div class="mono">${esc(R.tlsrpt.record||'—')}</div><div>BIMI</div><div class="mono">${esc(R.bimi.record||'—')}</div>
+     ${R.bimi.record?`<div>BIMI VMC</div><div>${R.bimi.vmc?pill('pass','present'):pill('info','none (Gmail requires VMC/CMC)')}</div>`:''}</div></div>
+   <div><h3>Client config / platform records</h3><table><tbody>${plat.map(([s,exp])=>{ const h=R.subs.find(x=>x.host===`${s}.${R.domain}`); return `<tr><td class="mono">${s}</td><td>${h?`<span class="mono">${esc(h.chain[0]||h.ips[0]||'')}</span>`:'<span class="muted">—</span>'}<div class="note">${esc(exp)}</div></td></tr>`; }).join('')}
+     ${R.srv.map(s=>`<tr><td class="mono">${esc(s.name.replace('.'+R.domain,''))}</td><td class="mono">${esc(s.data)}</td></tr>`).join('')}</tbody></table>
+     ${!R.subs.length?'<div class="note">Enable "Subdomain sweep" to check autodiscover/Intune records.</div>':''}</div></div>
+   <h3>SaaS footprint (verification TXT records)</h3>${R.verifications.length?R.verifications.map(v=>`<div class="rec"><div>${pill('info',esc(v.service))} <span class="mono">${esc(v.value)}</span></div></div>`).join(''):'<p class="muted">None found.</p>'}`;
+}
+function hostRow(h,label){ return `<tr><td class="mono"><b>${esc(label||h.host)}</b>${h.maybeWildcard?' '+pill('info','wildcard'):''}</td><td class="mono">${esc(h.chain.join(' → '))||'<span class="muted">—</span>'}</td>
+  <td class="mono">${esc(h.ips.slice(0,4).join(', '))}${h.ips.length>4?' …':''}${!h.ips.length?'<span class="muted">none</span>':''}</td>
+  <td>${h.proxy?pill('info','Proxied · '+esc(h.proxy)):h.ips.length&&!h.tags.length?pill('warn','Direct'):''} ${h.tags.filter(t=>t.name!==h.proxy).map(t=>pill('pass',esc(t.name))).join(' ')}</td><td class="mono muted">${esc((h.ptrs||[]).join(', '))}</td></tr>`; }
+function paneWeb(R){
+  const W=R.web, rd=R.rdap;
+  return `<div class="two"><div><h3 style="margin-top:0">DNS hosting</h3><div class="kv"><div>DNS provider</div><div>${R.dnsHost.map(x=>pill('info',esc(x))).join(' ')}</div>
+     <div>Nameservers</div><div class="mono">${esc(R.ns.join(', ')||'—')}</div>
+     ${R.soa?`<div>SOA primary</div><div class="mono">${esc(R.soa.primary)}</div><div>SOA admin</div><div class="mono">${esc(R.soa.admin)}</div><div>Serial</div><div class="mono">${esc(R.soa.serial)}</div><div>Refresh/Retry/Expire/Min</div><div class="mono">${esc([R.soa.refresh,R.soa.retry,R.soa.expire,R.soa.minimum].join(' / '))}</div>`:''}
+     <div>DNSSEC</div><div>${pill(R.dnssec.state==='validated'?'pass':R.dnssec.state==='broken'?'fail':'info',esc(R.dnssec.state))} ${R.dnssec.ds.length?`<span class="mono muted">DS ${esc(R.dnssec.ds[0])}</span>`:''}</div>
+     <div>CAA</div><div class="mono">${esc(R.caa.join(' | ')||'—')}</div></div></div>
+   <div><h3 style="margin-top:0">Registration (RDAP)</h3>${!rd?'<p class="muted">Skipped.</p>':rd.error?`<p class="muted">Unavailable from browser (${esc(rd.error)}). <a href="https://lookup.icann.org/en/lookup?name=${encodeURIComponent(R.org)}" target="_blank" rel="noopener">Look up at ICANN</a></p>`:
+     `<div class="kv"><div>Registrar</div><div>${esc(rd.registrar||'—')}</div><div>Created</div><div>${esc((rd.created||'').slice(0,10))}</div><div>Expires</div><div>${esc((rd.expires||'').slice(0,10))} ${rd.days!=null?pill(rd.days<30?'warn':'pass',rd.days+' days'):''}</div>
+      <div>Status</div><div style="font-size:12px">${rd.status.map(esc).join(', ')}</div></div>`}</div></div>
+   <h3>Website hosting &amp; proxy</h3>
+   <table><thead><tr><th>Host</th><th>CNAME chain</th><th>IPs</th><th>Detected</th><th>PTR</th></tr></thead><tbody>${hostRow(W.apex,R.domain+' (apex)')}${hostRow(W.www)}</tbody></table>
+   ${R.web.proxied?`<p>${pill('info','Proxied')} Traffic to the site is fronted by <b>${esc(R.web.proxyName)}</b> — the real server IP is hidden behind it.</p>`:`<p class="muted">Website is not behind a known reverse proxy/WAF${R.dnsHost.includes('Cloudflare')?' (Cloudflare DNS is used, but records are DNS-only / grey-cloud)':''}.</p>`}
+   ${W.exposed.length?`<h3>${pill('warn','Origin exposure')} Hosts resolving directly while the site is proxied</h3><table><tbody>${W.exposed.map(e=>`<tr><td class="mono">${esc(e.host)}</td><td class="mono">${esc(e.ips.join(', '))}</td><td>${e.tags.map(t=>pill('pass',esc(t))).join(' ')}</td></tr>`).join('')}</tbody></table><div class="note">If any of these IPs belong to the web server, attackers can bypass the WAF. Lock the origin firewall to the proxy's IP ranges.</div>`:''}
+   ${R.subs.length?(()=>{ const real=R.subs.filter(h=>!h.maybeWildcard), wc=R.subs.length-real.length; return `<h3>Subdomain sweep (${real.length} live of ${SUBS.length-1} checked)</h3>${real.length?`<table><thead><tr><th>Host</th><th>CNAME chain</th><th>IPs</th><th>Detected</th><th>PTR</th></tr></thead><tbody>${real.map(h=>hostRow(h)).join('')}</tbody></table>`:''}${wc?`<div class="note">${wc} more names only matched the wildcard record and are hidden.</div>`:''}`; })():''}
+   ${R.https.length?`<h3>HTTPS / SVCB record</h3>${R.https.map(x=>recBox(x)).join('')}`:''}`;
+}
+function paneSpeed(R){
+  const hist=speedHistory(R.domain);
+  const cur = (R.speed||[]).length ? `<table><thead><tr><th>Host</th><th>First connect</th><th>Warm median</th><th>Min / Max</th><th>Jitter</th><th>Failed</th><th>Samples (ms)</th><th>Breakdown (first)</th></tr></thead><tbody>
+    ${R.speed.map(t=>`<tr><td class="mono"><b>${esc(t.host)}</b></td><td>${t.cold??'—'} ms</td><td><b>${t.warmMedian??'—'}</b> ms</td><td>${t.min??'—'} / ${t.max??'—'}</td><td>${t.jitter??'—'}</td>
+      <td>${t.loss?pill('warn',t.loss+'%'):'0%'}</td><td class="mono">${t.blockedWhy?pill('info','skipped — '+esc(t.blockedWhy)):esc(t.samples.join(', '))}${t.errors.length?` <span class="note">${esc([...new Set(t.errors)].join('; '))}</span>`:''}</td>
+      <td class="mono" style="font-size:12px">${t.breakdown?`DNS ${t.breakdown.dns} · TCP ${t.breakdown.tcp} · TLS ${t.breakdown.tls} · TTFB ${t.breakdown.ttfb}`:'<span class="muted">not exposed by site</span>'}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Not run (enable "Connection timing").</p>';
+  const hrows=[...hist].reverse().slice(0,25);
+  return `<h3>Connection timing — from this browser</h3>${cur}
+   <div class="note">Measured with 5 HTTPS requests per host. "First connect" includes DNS + TCP + TLS setup; "warm median" is closer to round-trip time. Results depend on your location and network. This is not a bandwidth test.</div>
+   ${hist.length?`<h3 class="row" style="justify-content:space-between">Timing history (${hist.length} saved) <span class="noprint"><button class="sm" data-copy="${esc(histCsv(R.domain))}">Copy CSV</button> <button class="sm" id="dlHist">Download CSV</button></span></h3>
+   <table><thead><tr><th>When</th><th>Host</th><th>First</th><th>Warm median</th><th>Min/Max</th><th>Jitter</th><th>Failed</th></tr></thead><tbody>
+   ${hrows.map(h=>`<tr><td>${esc(new Date(h.at).toLocaleString())}</td><td class="mono">${esc(h.host)}</td><td>${h.cold??'—'}</td><td>${h.warm??'—'}</td><td>${h.min??'—'} / ${h.max??'—'}</td><td>${h.jitter??'—'}</td><td>${h.loss}%</td></tr>`).join('')}</tbody></table>
+   <div class="note">History is kept in this browser only (last 100 per domain). Clear it with Clear / reset.</div>`:''}`;
+}
+const ms = v => typeof v==='number' ? Math.round(v) : '—';
+function paneRegional(R){
+  const rg=R.regional, hist=regionalHistory(R.domain), g=gpSettings();
+  const head=`<h3 class="row" style="justify-content:space-between">Regional tests — Globalping probes <span class="noprint"><button class="sm" id="gpRunNow">${rg?'Re-run':'Run'} regional tests now</button></span></h3>
+    <div class="note" style="margin-top:-4px">Locations: ${gpLocList(g).map(esc).join(' · ')||'none set — open "Regional tests" above'}${g.on?'':' · not in batch (enable "Run on every check" to include automatically)'}</div>`;
+  let body='';
+  if(rg){
+    body+= rg.errors.length?`<p>${rg.errors.map(e=>pill('warn',esc(e))).join(' ')}</p>`:'';
+    if(rg.rows.length) body+=`<table><thead><tr><th>Probe location</th><th>Network</th><th>Ping avg</th><th>Min / Max</th><th>Loss</th><th>HTTPS total</th><th>DNS · TCP · TLS · TTFB</th><th>Status</th></tr></thead><tbody>
+      ${rg.rows.map(r=>`<tr><td><b>${esc(r.where)}</b></td><td class="muted" style="font-size:12px">${esc(r.network)}${r.asn?' · AS'+esc(r.asn):''}</td>
+       <td><b>${r.ping?ms(r.ping.avg):'—'}</b>${r.ping?' ms':''}</td><td>${r.ping?ms(r.ping.min)+' / '+ms(r.ping.max):'—'}</td><td>${r.ping? (r.ping.loss>0?pill(r.ping.loss===100?'info':'warn',r.ping.loss+'%'):'0%') :'—'}</td>
+       <td><b>${r.http?ms(r.http.total):'—'}</b>${r.http&&typeof r.http.total==='number'?' ms':''}</td><td class="mono" style="font-size:12px">${r.http?[r.http.dns,r.http.tcp,r.http.tls,r.http.ttfb].map(ms).join(' · '):'—'}</td>
+       <td>${r.http? (r.http.status==='finished'?pill(r.http.code<400?'pass':'warn',esc(r.http.code)):pill('fail',esc(r.http.status))) : ''}</td></tr>`).join('')}</tbody></table>
+      <div class="note">Target ${esc(rg.host)} · ${esc(new Date(rg.at).toLocaleString())}. 100% ping loss usually means ICMP is blocked, not that the site is down. If the site is proxied, these numbers measure the CDN edge nearest each probe, not the origin server.</div>`;
+    if(rg.extra.length) body+=`<h3>Extra targets</h3><table><thead><tr><th>Target</th><th>From</th><th>Avg</th><th>Min / Max</th><th>Loss</th></tr></thead><tbody>
+      ${rg.extra.map(r=>`<tr><td class="mono"><b>${esc(r.target)}</b></td><td>${esc(r.where)}</td><td><b>${ms(r.avg)}</b> ms</td><td>${ms(r.min)} / ${ms(r.max)}</td><td>${r.loss>0?pill(r.loss===100?'info':'warn',r.loss+'%'):'0%'}</td></tr>`).join('')}</tbody></table>`;
+  } else body+='<p class="muted">Not run for this domain.</p>';
+  if(hist.length) body+=`<h3 class="row" style="justify-content:space-between">Regional history (${hist.length} rows) <span class="noprint"><button class="sm" id="dlRHist">Download CSV</button></span></h3>
+    <table><thead><tr><th>When</th><th>Target</th><th>From</th><th>Ping</th><th>Loss</th><th>HTTPS</th><th>TTFB</th></tr></thead><tbody>
+    ${[...hist].reverse().slice(0,30).map(h=>`<tr><td>${esc(new Date(h.at).toLocaleString())}</td><td class="mono">${esc(h.target)}</td><td>${esc(h.where)}</td><td>${ms(h.ping)}</td><td>${h.loss??'—'}${h.loss!=null?'%':''}</td><td>${ms(h.http)}</td><td>${ms(h.ttfb)}</td></tr>`).join('')}</tbody></table>`;
+  return head+body;
+}
+function rhistCsv(d){ const q=csvCell; return ['when,kind,target,from,network,ping_avg_ms,loss_pct,https_total_ms,ttfb_ms,http_code',...regionalHistory(d).map(h=>[h.at,h.kind,h.target,h.where,h.network,h.ping,h.loss,h.http,h.ttfb,h.code].map(q).join(','))].join('\n'); }
+function histCsv(domain){ return ['when,host,first_ms,warm_median_ms,min_ms,max_ms,jitter_ms,failed_pct',...speedHistory(domain).map(h=>[h.at,h.host,h.cold??'',h.warm??'',h.min??'',h.max??'',h.jitter??'',h.loss].map(csvCell).join(','))].join('\n'); }
+function recordRows(R, filter, showEmpty){
+  const f=(filter||'').toLowerCase(); const rows=[];
+  for(const r of R.log){
+    if(!r.answers.length){ if(showEmpty) rows.push(`<tr><td class="mono">${esc(r.name)}</td><td>${esc(TNAME[r.type]||r.type)}</td><td></td><td>${pill(r.status===3?'info':r.status===0?'info':'fail',esc(r.rcode==='NOERROR'?'no data':r.rcode))}</td></tr>`); continue; }
+    for(const a of r.answers){ const txt=a.type==='TXT'?txtParse(a.data).text:a.type==='CAA'?caaText(a.data):a.data;
+      const line=`${a.name} ${a.type} ${txt}`.toLowerCase(); if(f && !line.includes(f)) continue;
+      rows.push(`<tr><td class="mono">${esc(a.name)}</td><td>${esc(a.type)}</td><td>${a.ttl}</td><td class="mono">${esc(txt)}</td></tr>`); }
+  }
+  return rows.join('')||'<tr><td colspan="4" class="muted">No matching records.</td></tr>';
+}
+function paneRecords(R){
+  return `<div class="row noprint" style="margin-bottom:8px"><input type="text" id="recFilter" placeholder="Filter (e.g. TXT, mail, outlook)" style="max-width:320px"><label class="chk"><input type="checkbox" id="recEmpty"> Show empty / NXDOMAIN queries</label>
+    <button class="sm" data-copy="${esc(zoneText(R))}">Copy as zone text</button></div>
+   <table><thead><tr><th>Name</th><th>Type</th><th>TTL</th><th>Value</th></tr></thead><tbody id="recBody">${recordRows(R,'',false)}</tbody></table>`;
+}
+function zoneText(R){ const L=[]; const seen=new Set(); for(const r of R.log) for(const a of r.answers){ const k=a.name+a.type+a.data; if(seen.has(k)) continue; seen.add(k); L.push(`${a.name}.\t${a.ttl}\tIN\t${a.type}\t${a.type==='CAA'?caaText(a.data):a.data}`);} return L.join('\n'); }
+function paneLog(R){
+  const s=[...R.log].sort((a,b)=>b.ms-a.ms);
+  return `${(R.blocked||[]).length?`<h3 style="margin-top:0">Withheld by privacy guard</h3><table><thead><tr><th>Target</th><th>Would have gone to</th><th>Reason</th></tr></thead><tbody>${R.blocked.map(b=>`<tr><td class="mono">${esc(b.target)}</td><td>${esc(b.service)}</td><td>${pill('info',esc(b.why))}</td></tr>`).join('')}</tbody></table><h3>Queries</h3>`:''}<p class="muted">${R.log.length} queries via ${esc(R.resolver)} DoH (automatic fallback to the other resolver on failure). Slowest first.</p>
+   <table><thead><tr><th>Name</th><th>Type</th><th>Result</th><th>Answers</th><th>AD</th><th>Resolver</th><th>ms</th></tr></thead><tbody>
+   ${s.map(r=>`<tr><td class="mono">${esc(r.name)}</td><td>${esc(TNAME[r.type]||r.type)}</td><td>${pill(r.status===0?'pass':r.status===3||r.status===-2?'info':'fail',esc(r.rcode))}${r.error?` <span class="note">${esc(r.error)}</span>`:''}</td><td>${r.answers.length}</td><td>${r.ad?'✓':''}</td><td>${esc(r.resolver)}</td><td>${r.ms}</td></tr>`).join('')}</tbody></table>`;
+}
+
+/* ============================== Export ============================== */
+/* CSV cell: quote, and neutralise spreadsheet formula injection (=,+,-,@,tab,CR) from untrusted probe/DNS text */
+function csvCell(v){ let t=String(v??''); if(/^[=+\-@\t\r]/.test(t) && !/^-?\d+(\.\d+)?$/.test(t)) t="'"+t; return '"'+t.replace(/"/g,'""')+'"'; }
+const strip = h => String(h).replace(/<code>(.*?)<\/code>/g,'`$1`').replace(/<[^>]+>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&amp;/g,'&');
+function markdown(R){
+  const L=[`# Mail & DNS report — ${R.domain}`,``,`**Grade ${R.grade} (${R.score}/100)** · ${new Date(R.at).toLocaleString()} · Ratatoskr DNS Inspector v${RATATOSKR.version}`,``,
+    `| Area | Score | Status |`,`|---|---|---|`,`| SPF | ${R.parts.spf}/25 | ${R.spf.root.record?'`'+R.spf.root.record+'`':'MISSING'} |`,
+    `| DMARC | ${R.parts.dmarc}/35 | ${R.dmarc.found?'`'+R.dmarc.record+'`':'MISSING'} |`,
+    `| DKIM | ${R.parts.dkim}/25 | ${R.dkim.keys.filter(k=>k.record).map(k=>`${k.selector} (${k.bits||'?'}-bit)`).join(', ')||'none found'} |`,
+    `| Transport & DNS | ${R.parts.infra}/15 | DNSSEC ${R.dnssec.state}; MTA-STS ${R.mtasts.record?'yes':'no'}; TLS-RPT ${R.tlsrpt.record?'yes':'no'} |`,``,
+    `**Mail:** ${(R.mail.providers||[]).join(', ')||(R.mail.nullMx?'Null MX':'none')} · **DNS host:** ${R.dnsHost.join(', ')} · **Web:** ${R.web.proxied?'proxied via '+R.web.proxyName:'direct'}`,``,`## Findings`,``];
+  for(const s of ['fail','warn','info','pass']) R.findings.filter(f=>f.sev===s).forEach(f=>L.push(`- **${s.toUpperCase()}** [${f.area}] ${strip(f.title)}${f.fix?` — ${strip(f.fix)}`:''}`));
+  if(R.suggest.length){ L.push('','## Suggested records',''); R.suggest.forEach(s=>L.push(`- **${s.label}:** \`${s.value}\`${s.note?' — '+s.note:''}`)); }
+  if((R.speed||[]).length){ L.push('','## Connection timing (from tester\'s browser)','','| Host | First connect | Warm median | Min/Max | Jitter | Failed |','|---|---|---|---|---|---|'); R.speed.forEach(t=>L.push(`| ${t.host} | ${t.cold??'—'} ms | ${t.warmMedian??'—'} ms | ${t.min??'—'}/${t.max??'—'} | ${t.jitter??'—'} | ${t.loss}% |`)); }
+  if(R.regional && R.regional.rows.length){ L.push('','## Regional tests (Globalping)','','| From | Network | Ping avg | Loss | HTTPS total | TTFB | Status |','|---|---|---|---|---|---|---|');
+    R.regional.rows.forEach(r=>L.push(`| ${r.where} | ${r.network} | ${ms(r.ping?.avg)} | ${r.ping?.loss??'—'}% | ${ms(r.http?.total)} | ${ms(r.http?.ttfb)} | ${r.http?.code??r.http?.status??''} |`));
+    R.regional.extra.forEach(r=>L.push(`| ${r.where} → ${r.target} | ${r.network} | ${ms(r.avg)} | ${r.loss}% | — | — | ping |`)); }
+  if((R.internalIps||[]).length){ L.push('','## Internal IPs in public DNS',''); R.internalIps.forEach(x=>L.push(`- ${x.host} → ${x.ip}`)); }
+  if(R.web.exposed.length){ L.push('','## Hosts bypassing the proxy',''); R.web.exposed.forEach(e=>L.push(`- ${e.host} → ${e.ips.join(', ')}`)); }
+  L.push('','## DNS records','','```',zoneText(R),'```'); return L.join('\n');
+}
+function serial(R){ const o={...R}; delete o.dns; o.log=R.log.map(({name,type,rcode,answers,ad,resolver,ms})=>({name,type:TNAME[type]||type,rcode,answers,ad,resolver,ms})); o.spf={...R.spf, ctx:{...R.spf.ctx, visited:[...R.spf.ctx.visited], services:[...R.spf.ctx.services]}}; return o; }
+
+
+/* ============================== Explain mode ============================== */
+/* [regex tested against an element's text, title, description, what "good" looks like] */
+const GLOSS = [
+  // --- inputs & options
+  [/^Domain\(s\)/,'Domains to check','Enter one or more domains. Each one is checked independently and gets its own grade and report.'],
+  [/^Extra DKIM selectors/,'DKIM selectors','DKIM keys are published under a name called a selector (selector1._domainkey…). DNS has no way to list them, so the app tries ~60 common ones. Add any you see in the s= value of a real email\'s DKIM-Signature header.'],
+  [/^Resolver/,'DNS-over-HTTPS resolver','The public DNS service used for lookups (encrypted over HTTPS). Google and Cloudflare return the same public data; switch if one is blocked or slow.'],
+  [/^Subdomain sweep/,'Subdomain sweep','Looks up ~30 common names (mail, vpn, autodiscover, ftp…) to map what the domain exposes and to spot hosts that bypass a proxy/WAF.'],
+  [/^Registrar \/ expiry/,'RDAP lookup','Registration data (registrar, expiry, locks) from the public RDAP system — the modern replacement for WHOIS.'],
+  [/^Connection timing/,'Connection timing','Times 5 HTTPS requests from your browser to the site. Shows how fast it answers from where you are.'],
+  [/^Regional tests/,'Regional tests (Globalping)','Runs ping and HTTPS tests from volunteer probes in the locations you choose — like testing over a VPN in that region, without the VPN.'],
+  [/^Privacy guard/,'Privacy guard','Stops chosen IPs/hosts (and all private ranges) from being sent to outside services: DNS resolvers, Globalping, RDAP.'],
+  [/^Default test locations/,'Probe locations','Where regional tests run from. Use a country, US state (US+Tennessee), city, continent (EU), cloud region (aws-us-east-1) or a network (AS7922).'],
+  [/^Extra targets/,'Extra targets','Additional hosts pinged from every region — e.g. a client firewall. Remember these are shared with Globalping.'],
+  [/^Globalping API token/,'API token','Optional free token from globalping.io for higher hourly limits. Stored only in this browser.'],
+  [/^Run on every check/,'Batch default','When on, regional tests run automatically for every domain you check.'],
+  [/^Probes per location/,'Probes per location','More probes = more confidence (and more tests used against your hourly limit).'],
+  [/^Blocklist/,'Blocklist','IPs, CIDR ranges (203.0.113.0/24) or hostnames that must never leave this browser. Hostnames also block their subdomains.'],
+  [/^Always block private/,'Private ranges','Internal addresses (10.x, 172.16-31.x, 192.168.x, loopback, link-local, IPv6 ULA) are never sent out — they reveal internal network layout.'],
+  [/^Never send raw IP/,'Hostnames only','Keeps IP addresses (like office WAN IPs) away from Globalping; only hostnames are shared.'],
+  [/^Skip reverse \(PTR\)/,'Skip PTR lookups','Reverse lookups send each IP to the DNS resolver to find its hostname. Turn off for maximum privacy (you lose hosting hints).'],
+  // --- header / score
+  [/^Score \d+\/100/,'Score','0-100 across SPF (25), DMARC (35), DKIM (25) and transport/DNS hardening (15). A ≥90, B ≥80, C ≥65, D ≥50, F below.'],
+  [/^SPF$/,'SPF — Sender Policy Framework','A DNS TXT record listing which servers may send mail as this domain. Receivers check the sending IP against it.','One record, ≤10 lookups, ending in ~all or -all.'],
+  [/^DKIM$/,'DKIM — DomainKeys Identified Mail','A cryptographic signature added to outgoing mail. The public key lives in DNS so receivers can verify the message wasn\'t forged or altered.','2048-bit keys for every service that sends as you.'],
+  [/^DMARC$/,'DMARC','The policy that ties SPF and DKIM to the visible From: address and tells receivers what to do when both fail — nothing, quarantine (spam), or reject. Also requests reports.','p=reject with rua= reporting.'],
+  [/^DNSSEC$/,'DNSSEC','Cryptographically signs DNS answers so they can\'t be spoofed in transit. Optional hardening; when broken it can take the domain offline.'],
+  [/^Proxy$/,'Proxy / WAF','The website is fronted by a reverse proxy (e.g. Cloudflare) that hides the real server and filters attacks.'],
+  [/^Transport & DNS$/,'Transport & DNS score','Extra hardening: MX health, MTA-STS, TLS-RPT, DNSSEC, CAA. Worth 15 points.'],
+  // --- tabs
+  [/^Findings/,'Findings','Every issue found, worst first, each with a fix. Fail = broken/exploitable, Warn = should fix, Info = optional/FYI, Pass = good.'],
+  [/^Mail & MX$/,'Mail & MX','Where the domain receives mail, who provides it, and transport-security records.'],
+  [/^Hosting & Proxy$/,'Hosting & Proxy','Who hosts DNS and the website, registration details, proxy/CDN detection and exposed hosts.'],
+  [/^Speed & regions$/,'Speed & regions','Response times from your browser and from regional probes, with saved history.'],
+  [/^All DNS records$/,'All DNS records','Every record returned during the checks. Filter, or copy as zone-file text.'],
+  [/^Query log$/,'Query log','Each DNS query made, its result code, timing and which resolver answered.'],
+  // --- severities
+  [/^Fail$/,'Fail','Broken or exploitable — fix first.'],[/^Warn$/,'Warn','Weakens protection or risks breakage — plan a fix.'],
+  [/^Info$/,'Info','Optional hardening or context.'],[/^Pass$/,'Pass','Configured correctly.'],
+  // --- SPF specifics
+  [/DNS lookups/i,'SPF lookup limit','Each include, a, mx, ptr, exists and redirect costs a DNS lookup. Receivers stop at 10 and SPF fails (PermError) — breaking delivery for everyone.','8 or fewer leaves room for new vendors.'],
+  [/^Record$/,'Record','The exact TXT record published in DNS.'],[/^Totals$/,'Totals','Counts across the whole SPF include tree.'],[/^IPv6 ranges/,'IPv6 ranges','Number of ip6: entries authorized.'],
+  [/^Void lookups/,'Void lookups','Lookups that return nothing. More than 2 = PermError.'],
+  [/^Effective "all"|Ends in|"all"/,'The "all" mechanism','What happens to mail from servers not listed: -all hard fail, ~all soft fail (usually spam folder), ?all neutral (no effect), +all allow anyone (dangerous).','~all or -all, backed by DMARC.'],
+  [/^IPv4 addresses authorized/,'Authorized IPv4','Total addresses your SPF lets send as you (direct ip4: entries). Huge numbers mean overly broad ranges.'],
+  [/^Senders detected/,'Detected senders','Email services recognised from your SPF includes. Each should also have DKIM set up for this domain.'],
+  [/^Record length/,'Record length','SPF over ~450 characters risks DNS response truncation.'],
+  [/^Include tree/,'Include tree','How your SPF expands: each include pulls in another domain\'s SPF, which can include more. Blue-bordered terms cost lookups.'],
+  [/^include:/,'include:','Pulls in another domain\'s SPF (e.g. a vendor). Costs 1 lookup plus whatever that record uses.'],
+  [/^[+\-~?]?ip4:/,'ip4:','Authorizes an IPv4 address or range directly. Costs no lookups.'],
+  [/^[+\-~?]?ip6:/,'ip6:','Authorizes an IPv6 address or range. No lookups.'],
+  [/^[+\-~?]?a(:|\/|$)/,'a','Authorizes the IPs of the domain\'s A/AAAA record (usually the web server). 1 lookup.'],
+  [/^[+\-~?]?mx(:|\/|$)/,'mx','Authorizes the IPs of the domain\'s MX servers. 1 lookup plus one per MX host.'],
+  [/^[+\-~?]?ptr/,'ptr','Deprecated: authorizes by reverse DNS. Slow and unreliable — remove it.'],
+  [/^redirect=/,'redirect=','Use another domain\'s SPF entirely in place of this one.'],
+  [/^-all$/,'-all','Hard fail: unlisted servers are not authorized.'],[/^~all$/,'~all','Soft fail: unlisted servers are suspicious; DMARC decides the outcome.'],
+  [/^\?all$/,'?all','Neutral: no opinion — offers no protection.'],[/^\+?all$/,'+all','Pass everything: anyone can send as this domain. Never use.'],
+  [/^~all ·|^-all ·|^\?all ·|^\+all ·/,'SPF summary','Ending qualifier and lookups used out of 10.'],
+  [/\bPermError\b/,'PermError','A permanent SPF error. Receivers treat SPF as failed for every message until it\'s fixed.'],
+  // --- DMARC
+  [/pct=|^Percentage/,'pct=','The share of failing mail the policy applies to. The rest gets the next-weaker policy. pct=0 means nothing is enforced.'],
+  [/^p=reject|^p=quarantine|^p=none|Policy p=/,'DMARC policy (p=)','none = monitor only; quarantine = failing mail to spam; reject = failing mail refused. "% " shows pct; "monitor only" means pct=0.','p=reject at 100%.'],
+  [/rua=|^Aggregate reports|Aggregate reporting/,'rua= (aggregate reports)','Daily XML summaries from receivers showing who sent mail as you and whether it passed. Essential before enforcing.'],
+  [/ruf=|^Forensic/,'ruf= (forensic reports)','Per-message failure samples. Few receivers send them and they can contain personal data.'],
+  [/^Subdomain policy|sp=/,'sp= (subdomain policy)','Policy for subdomains (mail.example.com). If weaker than p=, attackers can spoof subdomains.'],
+  [/^Non-existent subdomain|np=/,'np=','Policy for subdomains that don\'t exist in DNS (newer DMARC spec).'],
+  [/^DKIM alignment|adkim/,'adkim=','r (relaxed) lets subdomains align with the org domain; s (strict) requires an exact match.'],
+  [/^SPF alignment|aspf/,'aspf=','Same as adkim but for the SPF envelope domain.'],
+  [/^Failure options|fo=/,'fo=','When forensic reports are generated. fo=1 = whenever SPF or DKIM fails.'],
+  [/^Report interval|ri=/,'ri=','Requested seconds between aggregate reports (86400 = daily).'],
+  [/^Version/,'v=','Record version marker. Must be first.'],
+  [/^Report destinations/,'Report destinations','Where reports go. Addresses on another domain must authorize you with a _report._dmarc record or receivers may not send.'],
+  [/external · authorized/,'Authorized external address','The receiving domain publishes permission to accept your reports.'],
+  [/external · not authorized|hasn.t authorized/,'Unauthorized report address','The external report mailbox hasn\'t published a <domain>._report._dmarc record, so some receivers won\'t send reports there.'],
+  [/^Inherited from|inherited/,'Inherited DMARC','No record at this subdomain, so the parent domain\'s policy (its sp=) applies.'],
+  // --- DKIM
+  [/^Selector$/,'Selector','The name the key is published under (<selector>._domainkey.domain).'],
+  [/^Provider$/,'Provider','The service that usually uses this selector, or the one the CNAME points to.'],
+  [/^Key$/,'Key','Algorithm and size. RSA 2048-bit is standard; 1024 is weak; under 1024 is rejected by major providers.'],
+  [/^RSA \d+-bit|-bit RSA key/,'Key size','Bigger is harder to crack. Rotate anything below 2048.'],
+  [/^Flags$|t=y|testing/,'t=y (testing)','Marks the key as in testing — some receivers ignore the result. Remove once working.'],
+  [/^revoked/,'Revoked key','The key is published empty (p=) — deliberately retired.'],
+  [/no key at target|CNAMEs to/,'Dangling DKIM CNAME','The selector points to a provider record that has no key yet — usually DKIM signing wasn\'t switched on at the provider.'],
+  [/^wildcard/,'Wildcard','Matches a catch-all (*) DNS record, not a real configured name.'],
+  [/No DKIM key found|^not found$/,'DKIM not found','None of the common selectors exist. DKIM may still be configured under an unusual selector — check a real message header.'],
+  // --- Mail
+  [/^MX records|^Pref$|MX record/,'MX records','Where mail for the domain is delivered. Lower preference number = tried first.'],
+  [/Null MX/,'Null MX','"0 ." declares the domain never receives mail — good for parked domains.'],
+  [/^MTA-STS/,'MTA-STS','Forces other mail servers to use verified TLS when delivering to you, blocking downgrade/interception. Needs a TXT record plus a policy file on mta-sts.yourdomain.'],
+  [/^mta-sts host/,'mta-sts host','The web host serving the MTA-STS policy file.'],
+  [/^TLS-RPT/,'TLS-RPT','Receive reports when other servers fail to deliver to you securely.'],
+  [/^BIMI/,'BIMI','Shows your logo next to mail in supporting inboxes. Requires DMARC enforcement; Gmail also needs a VMC/CMC certificate.'],
+  [/^Client config/,'Platform records','Records that let Outlook, Intune, Entra and Teams find the right service automatically.'],
+  [/^autodiscover/,'autodiscover','Lets Outlook auto-configure mailboxes. Should CNAME to autodiscover.outlook.com for Microsoft 365.'],
+  [/^enterpriseenrollment/,'enterpriseenrollment','Simplifies Intune device enrollment.'],
+  [/^enterpriseregistration/,'enterpriseregistration','Used by Entra ID device registration.'],
+  [/^lyncdiscover|^sip$|^_sip/,'Teams / Skype records','Legacy discovery records for Skype for Business / Teams federation.'],
+  [/^SaaS footprint/,'SaaS footprint','Verification TXT records left by services that proved ownership of the domain — a quick inventory of what the client uses.'],
+  [/^Resolves to$/,'Resolves to','The IP addresses of the host.'],
+  // --- Hosting
+  [/^DNS provider|^DNS hosting/,'DNS provider','Who hosts the domain\'s DNS zone (where records are edited).'],
+  [/^Nameservers/,'Nameservers','The servers that answer DNS for the domain. Two or more on separate networks is best.'],
+  [/^SOA primary/,'SOA primary','The primary nameserver listed in the zone\'s Start of Authority record.'],
+  [/^SOA admin/,'SOA admin','Technical contact address in the SOA (first dot = @).'],
+  [/^Serial/,'Serial','Zone version number; changes on every edit.'],
+  [/^Refresh\/Retry/,'SOA timers','How often secondaries refresh, retry, when data expires, and how long "no such record" answers are cached (seconds).'],
+  [/^CAA/,'CAA','Lists which certificate authorities may issue SSL certificates for the domain. Prevents rogue certificates.'],
+  [/^Registrar$/,'Registrar','The company the domain is registered through.'],[/^Expires$/,'Expiry','Renewal date. Expired domains can be lost or hijacked.'],
+  [/^Status$/,'Domain status','Registry flags. clientTransferProhibited (registrar lock) prevents unauthorized transfers.'],
+  [/transfer lock/,'Registrar lock','Prevents the domain being moved to another registrar without your approval.'],
+  [/^CNAME chain$/,'CNAME chain','Aliases followed to reach the final host — often reveals the platform (e.g. azurewebsites.net).'],
+  [/^Detected$/,'Detected','Hosting, CDN or proxy identified from IP ranges, CNAMEs or reverse DNS.'],
+  [/^PTR$/,'PTR (reverse DNS)','The hostname an IP maps back to — often names the hosting company.'],
+  [/^Proxied/,'Proxied','Traffic goes through a reverse proxy/WAF; the real server IP is hidden.'],
+  [/^Direct$/,'Direct','Resolves straight to a server, not through a known proxy.'],
+  [/Origin exposure|bypass the proxy/,'Origin exposure','Hosts that resolve directly while the site is proxied. If one shares the web server, attackers can skip the WAF by hitting its IP.'],
+  [/^Subdomain sweep/,'Subdomain sweep','Common hostnames found live in public DNS.'],
+  [/internal\/private IP/,'Internal IPs in public DNS','Records pointing at private addresses leak internal network layout. Keep them in internal-only DNS.'],
+  [/^Wildcard DNS/,'Wildcard DNS','Any made-up subdomain resolves. Can hide typos and helps phishing look legitimate.'],
+  [/^HTTPS \/ SVCB/,'HTTPS record','Advertises HTTP/3 and other connection hints to browsers.'],
+  [/^unsigned$|^validated$|^broken$|^signed/,'DNSSEC state','unsigned = not enabled; validated = signed and verified; broken = DS present but failing (can cause outages).'],
+  // --- Speed
+  [/^First connect/,'First connect','First request: includes DNS lookup, TCP handshake and TLS setup — what a new visitor feels.'],
+  [/^Warm median/,'Warm median','Typical time once connected — close to network round-trip time.'],
+  [/^Min \/ Max/,'Min / Max','Fastest and slowest sample.'],
+  [/^Jitter/,'Jitter','Spread between samples. High jitter = unstable connection.'],
+  [/^Failed$|^Loss$/,'Failed / loss','Share of requests or pings with no answer. 100% ping loss usually just means ICMP is blocked.'],
+  [/^Samples/,'Samples','Each individual measurement in milliseconds.'],
+  [/^Breakdown/,'Breakdown','DNS, TCP connect, TLS handshake and time-to-first-byte — only shown if the site allows timing details.'],
+  [/^Ping avg/,'Ping','ICMP round-trip time from the probe to the target.'],
+  [/^HTTPS total/,'HTTPS total','Full time for the probe to fetch the site over HTTPS.'],
+  [/^DNS · TCP · TLS · TTFB/,'HTTPS phases','DNS lookup, TCP connect, TLS handshake, and time until the server starts responding (TTFB = server speed).'],
+  [/^Probe location/,'Probe location','Where the volunteer test machine is.'],[/^Network$/,'Network','The ISP / hosting network the probe sits on.'],
+  [/^Timing history|^Regional history/,'History','Saved in this browser so you can trend performance over time. Export as CSV.'],
+  // --- Log
+  [/^AD$/,'AD flag','Authenticated Data — the resolver validated the answer with DNSSEC.'],
+  [/^NOERROR$/,'NOERROR','Query succeeded.'],[/^NXDOMAIN$/,'NXDOMAIN','The name doesn\'t exist.'],[/^SERVFAIL$/,'SERVFAIL','The resolver couldn\'t get an answer — often broken DNSSEC or dead nameservers.'],
+  [/^no data$/,'No data','The name exists but has no record of that type.'],[/^BLOCKED$/,'Blocked','Withheld by the privacy guard; never sent.'],
+  [/^Withheld by privacy guard/,'Withheld items','Targets the privacy guard stopped from leaving your browser, and where they would have gone.'],
+  [/^Suggested records/,'Suggested records','Ready-to-paste DNS values for the fixes above. Replace placeholder addresses with real ones.'],
+];
+function explainFor(text){ const t=String(text||'').trim().replace(/\s+/g,' '); if(!t||t.length>220) return null; for(const g of GLOSS) if(g[0].test(t)) return g; return null; }
+const X_SEL='label, th, h3, .kv > div:nth-child(odd), .tabs button, .find .t, .find .muted, .pill, .term, .chips, .dhead .muted, .bar ~ *, .grid > div > .row span.muted, summary b, td.mono b';
+function annotate(root=document){
+  if(!document.body.classList.contains('explain')) return;
+  root.querySelectorAll(X_SEL).forEach(el=>{ if(el.dataset.x) return; const g=explainFor(el.childNodes.length===1||el.matches('.pill,.term')? el.textContent : (el.firstChild?.textContent||el.textContent)) || explainFor(el.textContent); if(g) el.dataset.x=GLOSS.indexOf(g); });
+  root.querySelectorAll('.chips').forEach(c=>{ c.childNodes.forEach(n=>{ if(n.nodeType===3 && n.textContent.trim()){ const g=explainFor(n.textContent.trim()); if(g){ const sp=document.createElement('span'); sp.textContent=n.textContent; sp.dataset.x=GLOSS.indexOf(g); n.replaceWith(sp); } } }); });
+  root.querySelectorAll('.grid .row span.muted').forEach(el=>{ const g=explainFor(el.textContent); if(g) el.dataset.x=GLOSS.indexOf(g); });
+}
+function clearAnnotations(){ document.querySelectorAll('[data-x]').forEach(el=>el.removeAttribute('data-x')); }
+const xtip=$('#xtip');
+function showTip(el, x, y){ const g=GLOSS[+el.dataset.x]; if(!g) return;
+  xtip.innerHTML=`<b>${esc(g[1])}</b>${esc(g[2])}${g[3]?`<div class="g">✓ Good: ${esc(g[3])}</div>`:''}`; xtip.style.display='block';
+  const r=xtip.getBoundingClientRect(); let L=x+14, T=y+16; if(L+r.width>innerWidth-8) L=innerWidth-r.width-8; if(T+r.height>innerHeight-8) T=y-r.height-12; xtip.style.left=Math.max(8,L)+'px'; xtip.style.top=Math.max(8,T)+'px'; }
+document.addEventListener('mousemove',e=>{ if(!document.body.classList.contains('explain')) return; const el=e.target.closest('[data-x]'); if(el) showTip(el,e.clientX,e.clientY); else xtip.style.display='none'; });
+document.addEventListener('click',e=>{ if(!document.body.classList.contains('explain')) return; const el=e.target.closest('[data-x]'); if(el && matchMedia('(hover: none)').matches){ showTip(el,e.clientX,e.clientY); } });
+document.addEventListener('scroll',()=>{ xtip.style.display='none'; },true);
+let xTimer; const xObs=new MutationObserver(()=>{ clearTimeout(xTimer); xTimer=setTimeout(()=>annotate(),60); });
+function setExplain(on){ document.body.classList.toggle('explain',on); $('#xBtn').classList.toggle('on',on); $('#xBtn').textContent='? Explain: '+(on?'on':'off'); store.set('explain',on);
+  if(on){ annotate(); xObs.observe(document.querySelector('main'),{childList:true,subtree:true}); } else { xObs.disconnect(); clearAnnotations(); xtip.style.display='none'; } }
+$('#xBtn').onclick=()=>setExplain(!document.body.classList.contains('explain'));
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') xtip.style.display='none'; });
+
+/* ============================== Footer, about, updates ============================== */
+function authorLinks(){ return `Built by <b>${esc(RATATOSKR.author)}</b> · <a href="${RATATOSKR.linkedin}" target="_blank" rel="noopener">LinkedIn</a> · <a href="${RATATOSKR.portfolio}" target="_blank" rel="noopener">Portfolio Toolbox</a>`; }
+function renderFooter(){ $('#appFoot').innerHTML=`<div class="row"><span><b>Ratatoskr</b> v${RATATOSKR.version}</span><span>${authorLinks()}</span><span style="flex:1"></span><a href="#" id="aboutLink">About &amp; license</a></div><span>${esc(NOTICE)}</span>`;
+  $('#aboutLink').onclick=e=>{ e.preventDefault(); openAbout(); }; }
+function openAbout(){
+  $('#aboutBody').innerHTML=`<h2>Ratatoskr — DNS Inspector</h2>
+   <p class="muted" style="margin-top:0">Version ${RATATOSKR.version} · released ${RATATOSKR.released}${LOCAL?' · offline copy':' · hosted copy'}</p>
+   <p>Named after the squirrel of Norse myth who runs messages up and down Yggdrasil, Ratatoskr carries your questions to the world's DNS and brings back what it says about a domain: SPF, DKIM, DMARC, mail and web hosting, proxies and speed.</p>
+   <p>${authorLinks()}</p>
+   <h3>License</h3><p style="font-size:13px">${esc(NOTICE)}</p>
+   <p style="font-size:13px">Source, releases and full license: <a href="${RATATOSKR.repo}" target="_blank" rel="noopener">${esc(RATATOSKR.repo.replace('https://',''))}</a></p>
+   <div class="row" style="justify-content:flex-end;margin-top:12px">${LOCAL&&RATATOSKR.manifestUrl?'<button id="updNow">Check for updates</button>':''}<button class="primary" id="aboutClose">Close</button></div>`;
+  $('#aboutModal').style.display='flex'; $('#aboutClose').onclick=()=>$('#aboutModal').style.display='none';
+  const u=$('#updNow'); if(u) u.onclick=()=>checkUpdates(true);
+}
+$('#aboutModal').onclick=e=>{ if(e.target.id==='aboutModal') $('#aboutModal').style.display='none'; };
+function semverCmp(a,b){ const p=x=>String(x||'0').replace(/^v/,'').split(/[.-]/).map(n=>parseInt(n,10)||0); const A=p(a),B=p(b); for(let i=0;i<3;i++){ if((A[i]||0)!==(B[i]||0)) return (A[i]||0)>(B[i]||0)?1:-1; } return 0; }
+async function checkUpdates(manual){
+  const url=RATATOSKR.manifestUrl; if(!url){ if(manual) toast('Update checks are off in this copy'); return; }
+  if(!LOCAL){ if(manual) toast('This is the hosted version — it’s always current'); return; }
+  try{ let u=url, j=null; for(let hop=0;hop<3;hop++){ const r=await fetch(u,{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status); j=await r.json(); if(j.moved_to && j.moved_to!==u){ u=j.moved_to; continue; } break; }
+    const newer=semverCmp(j.latest,RATATOSKR.version)>0; const dis=store.get('upd-dismiss','');
+    if(newer && (manual || dis!==j.latest)){ const el=$('#updBar');
+      el.innerHTML=`<span>🆕 <b>Ratatoskr ${esc(j.latest)}</b> is available — you have ${esc(RATATOSKR.version)}.${j.notes?' '+esc(j.notes):''}</span><span class="sp"></span>${j.download?`<a class="btnlink" href="${esc(j.download)}" target="_blank" rel="noopener">Get the update</a>`:''}<button class="sm" id="updLater">Later</button>`;
+      el.style.display='flex'; $('#updLater').onclick=()=>{ store.set('upd-dismiss',j.latest); el.style.display='none'; }; }
+    else if(manual) toast(newer?'Update available':`You’re on the latest version (${RATATOSKR.version})`);
+  }catch(e){ if(manual) toast('Couldn’t check for updates: '+e.message); }
+}
+
+/* ============================== Wiring ============================== */
+function parseDomains(s){
+  return [...new Set(s.split(/[\s,;]+/).map(x=>x.trim().toLowerCase().replace(/^[a-z]+:\/\//,'').replace(/^.*@/,'').replace(/[\/?#].*$/,'').replace(/\.$/,'')).filter(x=>/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(x)))];
+}
+async function run(){
+  guardLoad();
+  const domains=parseDomains($('#domains').value); if(!domains.length){ toast('Enter at least one valid domain'); return; }
+  const opts={resolver:$('#resolver').value, selectors:$('#selectors').value.split(/[\s,;]+/).map(s=>s.trim().toLowerCase()).filter(Boolean), sweep:$('#optSub').checked, rdap:$('#optRdap').checked, speed:$('#optSpeed').checked, gp:gpSettings()};
+  store.set('domains',$('#domains').value); store.set('opts',{resolver:opts.resolver, sel:$('#selectors').value, sweep:opts.sweep, rdap:opts.rdap, speed:opts.speed});
+  $('#runBtn').disabled=true; RESULTS=[]; CUR=0; renderSummary(); $('#detail').innerHTML='<div class="card empty">Running…</div>';
+  for(let i=0;i<domains.length;i++){
+    const d=domains[i];
+    const gw=guardCheck(d); if(gw){ RESULTS.push({domain:d, err:`Skipped — ${gw} (privacy guard)`}); renderSummary(); continue; }
+    try{ const R=await inspect(d, opts, (done,total)=>{ $('#status').textContent=`[${i+1}/${domains.length}] ${d}: ${done}/${total} queries`; }); RESULTS.push(R); }
+    catch(e){ console.error(e); RESULTS.push({domain:d, err:e.message||String(e)}); }
+    renderSummary(); if(i===0) renderDetail();
+  }
+  renderDetail();
+  const ok=RESULTS.filter(r=>!r.err); const failedAll = !ok.length || ok.every(r=>r.log.every(q=>q.status===-1));
+  $('#status').textContent = failedAll ? 'DNS lookups failed — download the file and open it directly in Chrome/Edge (previews and sandboxes block network calls).' : `Done — ${domains.length} domain${domains.length>1?'s':''} checked.`;
+  $('#runBtn').disabled=false;
+}
+$('#runBtn').onclick=run;
+let RUNNING=false;
+$('#resetBtn').onclick=()=>{ $('#modal').style.display='flex'; };
+$('#rsCancel').onclick=()=>{ $('#modal').style.display='none'; };
+$('#modal').onclick=e=>{ if(e.target.id==='modal') $('#modal').style.display='none'; };
+$('#rsGo').onclick=()=>{
+  if($('#rsInputs').checked){ $('#domains').value=''; $('#selectors').value=''; $('#resolver').value='google'; ['#optSub','#optRdap','#optSpeed'].forEach(x=>$(x).checked=true); store.set('domains',''); store.set('opts',null); }
+  if($('#rsResults').checked){ RESULTS=[]; CUR=0; TAB='findings'; renderSummary(); renderDetail(); $('#status').textContent='Cleared.'; if(location.hash) history.replaceState(null,'',location.pathname); }
+  if($('#rsHistory').checked){ store.set(HIST_KEY,{}); store.set(RHIST,{}); }
+  if($('#rsGp').checked){ gpLoad(null); }
+  if($('#rsPg').checked){ $('#pgList').value=''; $('#pgNoIpGp').checked=true; $('#pgNoPtr').checked=false; guardLoad(); }
+  $('#modal').style.display='none'; toast('Cleared'); if(!RESULTS.length) $('#domains').focus(); else renderDetail();
+};
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') $('#modal').style.display='none'; });
+$('#domains').addEventListener('keydown',e=>{ if(e.key==='Enter' && (e.ctrlKey||e.metaKey)) run(); });
+$('#themeBtn').onclick=()=>{ const t=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=t; store.set('theme',t); };
+(function init(){
+  const t=store.get('theme', matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); document.documentElement.dataset.theme=t;
+  $('#domains').value=store.get('domains',''); const o=store.get('opts',null); if(o){ $('#resolver').value=o.resolver||'google'; $('#selectors').value=o.sel||''; $('#optSub').checked=o.sweep!==false; $('#optRdap').checked=o.rdap!==false; $('#optSpeed').checked=o.speed!==false; }
+  { const g=store.get('pg',null); if(g){ $('#pgList').value=g.list||''; $('#pgNoIpGp').checked=g.noIpGp!==false; $('#pgNoPtr').checked=!!g.noPtr; } guardLoad();
+    ['#pgList','#pgNoIpGp','#pgNoPtr'].forEach(x=>{ $(x).addEventListener('input',guardLoad); $(x).addEventListener('change',guardLoad); }); }
+  gpLoad(store.get('gp',null)); ['#gpLocs','#gpExtra','#gpToken','#gpOn','#gpPing','#gpHttp','#gpLimit'].forEach(x=>{ $(x).addEventListener('input',gpMeta); $(x).addEventListener('change',gpMeta); });
+  renderFooter(); checkUpdates(false);
+  setExplain(!!store.get('explain',false));
+  TAB=store.get('tab','findings'); if(!TABS.some(([k])=>k===TAB)) TAB='findings';
+  const q=location.hash.replace('#',''); if(q && /\./.test(q)){ $('#domains').value=q; run(); }
+})();
+</script>
+</body>
+</html>

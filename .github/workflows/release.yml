@@ -1,0 +1,92 @@
+name: Release
+
+# Publishes a GitHub Release with the downloadable package whenever main contains a
+# Ratatoskr version that hasn't been released yet (the version is read from Ratatoskr.html).
+#
+# Release assets:
+#   - Ratatoskr.html               the app on its own
+#   - ratatoskr-<version>.zip      the full package (app, guides, license)
+#
+# To release: bump `version` in Ratatoskr.html (and ratatoskr.json + CHANGELOG.md), push to main.
+
+on:
+  push:
+    branches: [main]
+    paths: ['Ratatoskr.html', 'ratatoskr.json', 'CHANGELOG.md', '.github/workflows/release.yml']
+  workflow_dispatch:
+    inputs:
+      rebuild:
+        description: 'Re-upload assets even if this version is already released'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from Ratatoskr.html
+        id: v
+        run: |
+          VER=$(grep -oE "version:'[0-9]+\.[0-9]+\.[0-9]+[^']*'" Ratatoskr.html | head -1 | sed -E "s/version:'([^']+)'/\1/")
+          [ -n "$VER" ] || { echo "::error::Could not find version in Ratatoskr.html"; exit 1; }
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VER" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VER" >/dev/null 2>&1; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+          echo "Ratatoskr version: $VER"
+
+      - name: Check ratatoskr.json matches
+        if: steps.v.outputs.exists == 'false' || inputs.rebuild
+        run: |
+          grep -q "\"latest\": *\"${{ steps.v.outputs.ver }}\"" ratatoskr.json \
+            || echo "::warning::ratatoskr.json 'latest' is not ${{ steps.v.outputs.ver }}; existing copies won't be told about this release"
+
+      - name: Build package
+        if: steps.v.outputs.exists == 'false' || inputs.rebuild
+        run: |
+          NAME="ratatoskr-${{ steps.v.outputs.ver }}"
+          mkdir -p "dist/$NAME"
+          cp -r Ratatoskr.html index.html README.md LICENSE.md CHANGELOG.md ratatoskr.json docs "dist/$NAME/"
+          (cd dist && zip -qr "$NAME.zip" "$NAME" && cp "$NAME/Ratatoskr.html" Ratatoskr.html)
+          ls -la dist
+
+      - name: Release notes
+        if: steps.v.outputs.exists == 'false' || inputs.rebuild
+        run: |
+          awk -v v="## ${{ steps.v.outputs.ver }}" 'index($0,v)==1 {f=1;next} /^## /{if(f)exit} f' CHANGELOG.md > notes.md
+          OWNER=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          {
+            echo ""
+            echo "### Get Ratatoskr"
+            echo "- **Launch in your browser (no download):** https://${OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
+            echo "- **App only:** \`Ratatoskr.html\`, download and open in Chrome, Edge or Brave"
+            echo "- **Full package:** \`ratatoskr-${{ steps.v.outputs.ver }}.zip\`, app plus guides and license"
+          } >> notes.md
+          cat notes.md
+
+      - name: Publish release
+        if: steps.v.outputs.exists == 'false' || inputs.rebuild
+        run: |
+          TAG="${{ steps.v.outputs.tag }}"
+          FILES="dist/Ratatoskr.html dist/ratatoskr-${{ steps.v.outputs.ver }}.zip"
+          if [ "${{ steps.v.outputs.exists }}" = "true" ]; then
+            gh release upload "$TAG" $FILES --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" $FILES --target "$GITHUB_SHA" \
+              --title "Ratatoskr ${{ steps.v.outputs.ver }}" --notes-file notes.md --latest
+          fi
+
+      - name: Nothing to do
+        if: steps.v.outputs.exists == 'true' && !inputs.rebuild
+        run: echo "Version ${{ steps.v.outputs.ver }} is already released. Bump the version in Ratatoskr.html to publish a new release."
